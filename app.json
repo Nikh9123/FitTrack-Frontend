@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "FitTrack",
+    "slug": "fittrack",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "fittrack",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#070B14"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "FitTrack uses the camera to capture InBody and body composition reports.",
+        "NSPhotoLibraryUsageDescription": "FitTrack uses your photo library to upload existing InBody reports.",
+        "NSMotionUsageDescription": "FitTrack uses motion data to track walking, running, and activity summaries."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACTIVITY_RECOGNITION"
+      ],
+      "package": "com.sdeashirvad.fittrack"
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "FitTrack uses the camera to capture InBody and body composition reports.",
+          "photosPermission": "FitTrack uses your photo library to upload existing InBody reports.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      "expo-video"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9f892c60-5fce-4f3e-be32-a34ac9f3c60b"
+      }
+    }
+  }
+}
