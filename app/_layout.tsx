@@ -42,11 +42,18 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerShown: false, animation: "fade" }}>
-      <Stack.Screen name="index" />
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        animation: "slide_from_right",
+        animationDuration: 320,
+        gestureEnabled: true,
+      }}
+    >
+      <Stack.Screen name="index" options={{ animation: "fade" }} />
       <Stack.Screen name="auth/callback" options={{ animation: "fade" }} />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(auth)" options={{ animation: "slide_from_right" }} />
+      <Stack.Screen name="(tabs)" options={{ animation: "fade_from_bottom", animationDuration: 280 }} />
       <Stack.Screen
         name="analytics"
         options={{ animation: "slide_from_right", headerShown: false }}

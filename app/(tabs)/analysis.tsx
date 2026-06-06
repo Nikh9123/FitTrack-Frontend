@@ -1,13 +1,15 @@
+import { AnalysisSkeleton } from "@/components/skeletons/AnalysisSkeleton";
+import { InsightsSkeleton } from "@/components/skeletons/InsightsSkeleton";
+import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
 import { useBottomTabPadding } from "@/hooks/useBottomTabPadding";
 import { useColors } from "@/hooks/useColors";
 import { useProgressAPI } from "@/hooks/useProgressAPI";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { hapticHeavy, hapticMedium, hapticSelection } from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -150,6 +152,7 @@ export default function AnalysisScreen() {
   };
 
   return (
+    <ScreenEntrance style={{ flex: 1 }}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -162,9 +165,8 @@ export default function AnalysisScreen() {
             <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>Body composition insights</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            {loading && <ActivityIndicator size="small" color={colors.primary} />}
             <TouchableOpacity
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/inbody"); }}
+              onPress={() => { void hapticMedium(); router.push("/inbody"); }}
               style={[styles.scanBtn, { backgroundColor: colors.primary }]}
             >
               <Ionicons name="add" size={16} color="#fff" />
@@ -173,6 +175,10 @@ export default function AnalysisScreen() {
           </View>
         </View>
 
+        {loading ? (
+          <AnalysisSkeleton />
+        ) : (
+        <>
         {/* ── Score card with radar ── */}
         <View style={[styles.scoreCard, { backgroundColor: colors.card, ...colors.shadow.medium }]}>
           <View style={styles.scoreTop}>
@@ -271,7 +277,7 @@ export default function AnalysisScreen() {
         {reports.map((rep, i) => (
           <TouchableOpacity
             key={rep.id}
-            onPress={() => { Haptics.selectionAsync(); router.push("/inbody"); }}
+            onPress={() => { void hapticSelection(); router.push("/inbody"); }}
             style={[styles.reportCard, { backgroundColor: colors.card, ...colors.shadow.soft, marginBottom: i < reports.length - 1 ? 8 : 0 }]}
           >
             <View style={[styles.reportIcon, { backgroundColor: colors.primary + "15" }]}>
@@ -307,7 +313,7 @@ export default function AnalysisScreen() {
             <Text style={[styles.aiTitle, { color: colors.foreground }]}>AI Insights</Text>
             <View style={{ flex: 1 }} />
             {insightsLoading
-              ? <ActivityIndicator size="small" color={colors.primary} />
+              ? <InsightsSkeleton />
               : (
                 <TouchableOpacity
                   onPress={handleLoadAIInsights}
@@ -333,9 +339,12 @@ export default function AnalysisScreen() {
           )}
         </View>
 
+        </>
+        )}
+
         {/* ── Upload CTA ── */}
         <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); router.push("/inbody"); }}
+          onPress={() => { void hapticHeavy(); router.push("/inbody"); }}
           style={{ borderRadius: 20, overflow: "hidden" }}
         >
           <LinearGradient
@@ -354,6 +363,7 @@ export default function AnalysisScreen() {
         </TouchableOpacity>
       </ScrollView>
     </View>
+    </ScreenEntrance>
   );
 }
 

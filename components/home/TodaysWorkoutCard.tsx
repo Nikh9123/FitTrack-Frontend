@@ -1,3 +1,4 @@
+import { WorkoutCardSkeleton } from "@/components/skeletons/HomeSkeletons";
 import type { CurrentWorkoutPlan } from "@/lib/home-api";
 import { getTodaysPlanExercises } from "@/lib/home-api";
 import { useColors } from "@/hooks/useColors";
@@ -16,11 +17,7 @@ export function TodaysWorkoutCard({ plan, loading, onPress }: TodaysWorkoutCardP
   const colors = useColors();
 
   if (loading) {
-    return (
-      <View style={[styles.loadingCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <WorkoutCardSkeleton />;
   }
 
   if (!plan) {

@@ -1,6 +1,6 @@
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { hapticLight } from "@/lib/haptics";
 import React from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
@@ -33,7 +33,7 @@ function QuickActionPill({ icon, label, onPress, accent }: QuickAction) {
         scale.value = withSpring(1, { damping: 12, stiffness: 200 });
       }}
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        void hapticLight();
         onPress();
       }}
       style={[

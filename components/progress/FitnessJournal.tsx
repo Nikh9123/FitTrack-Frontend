@@ -1,13 +1,14 @@
+import { JournalChartSkeleton } from "@/components/skeletons/JournalChartSkeleton";
 import { AnimatedHistoryBar } from "@/components/progress/AnimatedHistoryBar";
 import { MetricIllustration } from "@/components/progress/MetricIllustration";
 import { InsightCard } from "@/components/ui/InsightCard";
 import { useColors } from "@/hooks/useColors";
 import type { HistoryDayBucket, HistoryInsightDto, HistoryPeriod } from "@/lib/progress-history-api";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { hapticSelection } from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { entranceFade } from "@/constants/animations";
 import Animated from "react-native-reanimated";
 
@@ -144,7 +145,7 @@ export function FitnessJournal({
               <TouchableOpacity
                 key={p.key}
                 onPress={() => {
-                  Haptics.selectionAsync();
+                  void hapticSelection();
                   onPeriodChange(p.key);
                 }}
                 style={[
@@ -165,7 +166,7 @@ export function FitnessJournal({
             <TouchableOpacity
               key={m.key}
               onPress={() => {
-                Haptics.selectionAsync();
+                void hapticSelection();
                 onMetricChange(m.key);
               }}
               style={[
@@ -194,7 +195,7 @@ export function FitnessJournal({
         </View>
 
         {loading ? (
-          <ActivityIndicator color={color} style={{ paddingVertical: 36 }} />
+          <JournalChartSkeleton />
         ) : (
           <View key={chartAnimKey} style={styles.chartArea}>
             {isEmpty ? (
@@ -215,25 +216,27 @@ export function FitnessJournal({
 
                   return (
                     <View key={`${bucket.date}-${chartAnimKey}`} style={styles.barColWrap}>
-                      {metric === "weight" && hasWeight ? (
-                        <Text style={[styles.barValue, { color }]} numberOfLines={1}>
-                          {bucket.weightKg!.toFixed(1)}
-                        </Text>
-                      ) : (
-                        <View style={styles.barValueSpacer} />
-                      )}
-                      {metric === "weight" && !hasWeight ? (
-                        <View style={[styles.barEmptyTrack, { backgroundColor: colors.border }]} />
-                      ) : (
-                        <AnimatedHistoryBar
-                          value={barValue}
-                          max={displayMax}
-                          color={color}
-                          index={i}
-                          trackColor={colors.border}
-                          animKey={chartAnimKey}
-                        />
-                      )}
+                      <View style={styles.barStack}>
+                        {metric === "weight" && hasWeight ? (
+                          <Text style={[styles.barValue, { color }]} numberOfLines={1}>
+                            {bucket.weightKg!.toFixed(1)}
+                          </Text>
+                        ) : (
+                          <View style={styles.barValueSpacer} />
+                        )}
+                        {metric === "weight" && !hasWeight ? (
+                          <View style={[styles.barEmptyTrack, { backgroundColor: colors.border }]} />
+                        ) : (
+                          <AnimatedHistoryBar
+                            value={barValue}
+                            max={displayMax}
+                            color={color}
+                            index={i}
+                            trackColor={colors.border}
+                            animKey={chartAnimKey}
+                          />
+                        )}
+                      </View>
                       <Text style={[styles.barLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
                         {dayLabel}
                       </Text>
@@ -292,11 +295,12 @@ const styles = StyleSheet.create({
   emptyScene: { alignItems: "center", gap: 6, paddingVertical: 4 },
   emptyTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", textAlign: "center" },
   emptyHint: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 17, paddingHorizontal: 12 },
-  barsRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", height: 110, gap: 2, minHeight: 110 },
-  barColWrap: { flex: 1, alignItems: "center", gap: 4, minWidth: 0 },
-  barValue: { fontSize: 8, fontFamily: "Inter_600SemiBold", height: 10 },
-  barValueSpacer: { height: 10 },
-  barEmptyTrack: { height: 88, width: "70%", borderRadius: 6, opacity: 0.35 },
-  barLabel: { fontSize: 9, fontFamily: "Inter_500Medium" },
+  barsRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 3, paddingTop: 4 },
+  barColWrap: { flex: 1, alignItems: "center", gap: 6, minWidth: 0, maxWidth: 36 },
+  barStack: { alignItems: "center", width: "100%" },
+  barValue: { fontSize: 8, fontFamily: "Inter_600SemiBold", height: 10, marginBottom: 2 },
+  barValueSpacer: { height: 10, marginBottom: 2 },
+  barEmptyTrack: { height: 88, width: "80%", borderRadius: 6, opacity: 0.35 },
+  barLabel: { fontSize: 9, fontFamily: "Inter_500Medium", marginTop: 2 },
   insightsBlock: { gap: 8 },
 });

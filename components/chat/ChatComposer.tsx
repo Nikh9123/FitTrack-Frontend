@@ -1,6 +1,6 @@
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { hapticLight } from "@/lib/haptics";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -16,9 +16,16 @@ interface ChatComposerProps {
   onSend: (text: string) => Promise<void>;
   disabled?: boolean;
   placeholder?: string;
+  /** When false, parent handles bottom inset (e.g. tab bar + keyboard) */
+  includeBottomInset?: boolean;
 }
 
-export function ChatComposer({ onSend, disabled, placeholder = "Ask your coach..." }: ChatComposerProps) {
+export function ChatComposer({
+  onSend,
+  disabled,
+  placeholder = "Ask your coach...",
+  includeBottomInset = true,
+}: ChatComposerProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
@@ -30,14 +37,14 @@ export function ChatComposer({ onSend, disabled, placeholder = "Ask your coach..
     setSending(true);
     setText("");
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void hapticLight();
       await onSend(trimmed);
     } finally {
       setSending(false);
     }
   };
 
-  const bottomPad = Math.max(insets.bottom, Platform.OS === "web" ? 12 : 8);
+  const bottomPad = includeBottomInset ? Math.max(insets.bottom, Platform.OS === "web" ? 12 : 8) : 8;
 
   return (
     <View style={[styles.wrap, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: bottomPad }]}>

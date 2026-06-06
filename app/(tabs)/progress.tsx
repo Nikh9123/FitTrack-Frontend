@@ -2,6 +2,9 @@ import { useFitness } from "@/context/FitnessContext";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useProgressAPI } from "@/hooks/useProgressAPI";
+import { InsightsSkeleton } from "@/components/skeletons/InsightsSkeleton";
+import { ScoreCardSkeleton } from "@/components/skeletons/ScoreCardSkeleton";
+import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
 import { AnimatedFitnessScoreCard } from "@/components/progress/AnimatedFitnessScoreCard";
 import { AnimatedStatCard } from "@/components/progress/AnimatedStatCard";
 import { FitnessJournal } from "@/components/progress/FitnessJournal";
@@ -24,12 +27,11 @@ import {
   type WeightChangePeriod,
 } from "@/lib/progress-weight-api";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { hapticLight, hapticMedium, hapticSelection, hapticSuccess } from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Platform,
   ScrollView,
@@ -144,7 +146,7 @@ function EmptyCard({
       <Text style={[emptyStyles.subtitle, { color: colors.mutedForeground }]}>{subtitle}</Text>
       {ctaLabel && onCta && (
         <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onCta(); }}
+          onPress={() => { void hapticLight(); onCta(); }}
           style={[emptyStyles.cta, { backgroundColor: colors.primary }]}
         >
           {ctaIcon && <Ionicons name={ctaIcon as any} size={14} color="#fff" />}
@@ -198,7 +200,7 @@ function CheckinModal({
             {[1,2,3,4,5].map(v => (
               <TouchableOpacity
                 key={v}
-                onPress={() => { Haptics.selectionAsync(); setEnergy(v); }}
+                onPress={() => { void hapticSelection(); setEnergy(v); }}
                 style={[styles.levelBtn, { backgroundColor: energy === v ? LEVEL_COLORS[v-1] : colors.border + "60" }]}
               >
                 <Text style={[styles.levelNum, { color: energy === v ? "#fff" : colors.mutedForeground }]}>{v}</Text>
@@ -212,7 +214,7 @@ function CheckinModal({
             {[5,6,7,8,9].map(v => (
               <TouchableOpacity
                 key={v}
-                onPress={() => { Haptics.selectionAsync(); setSleep(v); }}
+                onPress={() => { void hapticSelection(); setSleep(v); }}
                 style={[styles.levelBtn, { backgroundColor: sleep === v ? colors.primary : colors.border + "60" }]}
               >
                 <Text style={[styles.levelNum, { color: sleep === v ? "#fff" : colors.mutedForeground }]}>{v}</Text>
@@ -225,7 +227,7 @@ function CheckinModal({
             {[1,2,3,4,5].map(v => (
               <TouchableOpacity
                 key={v}
-                onPress={() => { Haptics.selectionAsync(); setRecovery(v); }}
+                onPress={() => { void hapticSelection(); setRecovery(v); }}
                 style={[styles.levelBtn, { backgroundColor: recovery === v ? "#22C55E" : colors.border + "60" }]}
               >
                 <Text style={[styles.levelNum, { color: recovery === v ? "#fff" : colors.mutedForeground }]}>{v}</Text>
@@ -235,7 +237,7 @@ function CheckinModal({
 
           {!hasCheckedIn && (
             <TouchableOpacity
-              onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); onSubmit({ energyLevel: energy, sleepHours: sleep, recoveryScore: recovery, soreness }); }}
+              onPress={() => { void hapticSuccess(); onSubmit({ energyLevel: energy, sleepHours: sleep, recoveryScore: recovery, soreness }); }}
               style={[styles.submitBtn, { backgroundColor: colors.primary }]}
             >
               <Ionicons name="checkmark-circle" size={18} color="#fff" />
@@ -403,7 +405,7 @@ export default function ProgressScreen() {
     await logCheckin(data);
     setCheckinVisible(false);
     await refreshDailyData();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void hapticSuccess();
   };
 
   const handleLoadInsights = async () => {
@@ -420,6 +422,7 @@ export default function ProgressScreen() {
         : active.data.length >= 2;
 
   return (
+    <ScreenEntrance style={{ flex: 1 }}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -432,7 +435,6 @@ export default function ProgressScreen() {
             <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>Your transformation journey</Text>
           </View>
           <View style={styles.headerRight}>
-            {loading && <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />}
             {currentStreak > 0 && (
               <View style={[styles.streakBadge, { backgroundColor: colors.primary + "15" }]}>
                 <Ionicons name="flame" size={15} color={colors.primary} />
@@ -458,14 +460,14 @@ export default function ProgressScreen() {
             </Text>
             <View style={styles.onboardCtas}>
               <TouchableOpacity
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/inbody"); }}
+                onPress={() => { void hapticLight(); router.push("/inbody"); }}
                 style={[styles.onboardBtn, { backgroundColor: colors.primary }]}
               >
                 <Ionicons name="scan-outline" size={14} color="#fff" />
                 <Text style={styles.onboardBtnText}>Upload Report</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setCheckinVisible(true); }}
+                onPress={() => { void hapticLight(); setCheckinVisible(true); }}
                 style={[styles.onboardBtn, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.primary }]}
               >
                 <Ionicons name="pulse-outline" size={14} color={colors.primary} />
@@ -476,6 +478,9 @@ export default function ProgressScreen() {
         )}
 
         {/* ── Fitness Score Card ── */}
+        {loading ? (
+          <ScoreCardSkeleton />
+        ) : (
         <AnimatedFitnessScoreCard
           score={dashboard.fitnessScore.score}
           label={dashboard.fitnessScore.label}
@@ -484,11 +489,12 @@ export default function ProgressScreen() {
           colors={colors}
           animKey={`${screenAnimKey}-${dashboard.fitnessScore.score}`}
         />
+        )}
 
         {/* ── Daily Check-in ── */}
         <PulseGlow active={!hasCheckedIn} color={hasCheckedIn ? colors.green : colors.primary} style={{ borderRadius: 16 }}>
           <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setCheckinVisible(true); }}
+            onPress={() => { void hapticMedium(); setCheckinVisible(true); }}
             style={[styles.checkinBanner, {
               backgroundColor: hasCheckedIn ? colors.green + "12" : colors.primary + "12",
               borderColor: "transparent",
@@ -652,7 +658,7 @@ export default function ProgressScreen() {
               {(["1d", "1w", "1m", "all"] as WeightChangePeriod[]).map((p) => (
                 <TouchableOpacity
                   key={p}
-                  onPress={() => { Haptics.selectionAsync(); setPeriod(p); }}
+                  onPress={() => { void hapticSelection(); setPeriod(p); }}
                   style={[styles.periodBtn, period === p && { backgroundColor: active.color }]}
                 >
                   <Text style={[styles.periodText, { color: period === p ? "#fff" : colors.mutedForeground }]}>
@@ -667,7 +673,7 @@ export default function ProgressScreen() {
             {(Object.keys(modeMap) as Mode[]).map((m) => (
               <TouchableOpacity
                 key={m}
-                onPress={() => { Haptics.selectionAsync(); setChartMode(m); }}
+                onPress={() => { void hapticSelection(); setChartMode(m); }}
                 style={[styles.modeTab, chartMode === m && { backgroundColor: modeMap[m].color + "18", borderColor: modeMap[m].color }]}
               >
                 <Text style={[styles.modeTabText, { color: chartMode === m ? modeMap[m].color : colors.mutedForeground }]}>
@@ -681,7 +687,7 @@ export default function ProgressScreen() {
             <View style={styles.weightSourceRow}>
               {hasInbodyWeightChart ? (
                 <TouchableOpacity
-                  onPress={() => { Haptics.selectionAsync(); setWeightChartSource("inbody"); }}
+                  onPress={() => { void hapticSelection(); setWeightChartSource("inbody"); }}
                   style={[
                     styles.weightSourceChip,
                     {
@@ -707,7 +713,7 @@ export default function ProgressScreen() {
               ) : null}
               {hasManualWeightChart ? (
                 <TouchableOpacity
-                  onPress={() => { Haptics.selectionAsync(); setWeightChartSource("scale"); }}
+                  onPress={() => { void hapticSelection(); setWeightChartSource("scale"); }}
                   style={[
                     styles.weightSourceChip,
                     {
@@ -763,7 +769,7 @@ export default function ProgressScreen() {
               </Text>
               {(chartMode === "fat" || chartMode === "muscle") && (
                 <TouchableOpacity
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push("/inbody"); }}
+                  onPress={() => { void hapticLight(); router.push("/inbody"); }}
                   style={[styles.chartEmptyBtn, { backgroundColor: colors.primary + "15" }]}
                 >
                   <Text style={[styles.chartEmptyBtnText, { color: colors.primary }]}>Upload Report</Text>
@@ -786,7 +792,7 @@ export default function ProgressScreen() {
             <Text style={[styles.aiTitle, { color: colors.foreground }]}>AI Insights</Text>
             <View style={{ flex: 1 }} />
             {insightsLoading
-              ? <ActivityIndicator size="small" color={colors.primary} />
+              ? <InsightsSkeleton />
               : insightsExpanded && hasInsights
                 ? (
                   <TouchableOpacity
@@ -868,7 +874,7 @@ export default function ProgressScreen() {
 
         {/* ── Upload CTA ── */}
         <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/inbody"); }}
+          onPress={() => { void hapticMedium(); router.push("/inbody"); }}
           activeOpacity={0.88}
           style={{ borderRadius: 20, overflow: "hidden" }}
         >
@@ -897,6 +903,7 @@ export default function ProgressScreen() {
         existingCheckin={dashboard.recentCheckin}
       />
     </View>
+    </ScreenEntrance>
   );
 }
 
