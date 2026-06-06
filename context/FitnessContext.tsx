@@ -24,6 +24,13 @@ import {
   logWeightApi,
   type DietLogDto,
 } from "@/lib/nutrition-api";
+import { fetchWorkoutStreak } from "@/lib/home-api";
+import {
+  loadStepGoalFromStorage,
+  saveStepGoalToStorage,
+  syncStepGoalToProfile,
+  DEFAULT_STEP_GOAL,
+} from "@/lib/step-goal";
 import {
   backfillRecentDays,
   getStepTrackingSnapshot,
@@ -123,6 +130,7 @@ interface FitnessContextType {
   isLoadingNutrition: boolean;
   calorieGoal: number;
   waterGoal: number;
+  stepGoal: number;
   streak: number;
   weeklyCalories: number[];
   addWater: (glasses?: number) => Promise<void>;
@@ -138,6 +146,7 @@ interface FitnessContextType {
   dismissStepPermissionBanner: () => void;
   refreshActivity: () => Promise<void>;
   refreshDailyData: () => Promise<void>;
+  setStepGoal: (goal: number) => Promise<void>;
   bmi: number;
 }
 
@@ -223,6 +232,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
   const [isLoadingNutrition, setIsLoadingNutrition] = useState(false);
   const [calorieGoal, setCalorieGoal] = useState(2200);
   const [waterGoal, setWaterGoal] = useState(8);
+  const [stepGoal, setStepGoalState] = useState(DEFAULT_STEP_GOAL);
   const [streak, setStreak] = useState(0);
   const [weeklyCalories, setWeeklyCalories] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
   const [latestWeight, setLatestWeight] = useState<number | undefined>(undefined);
@@ -281,12 +291,13 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     const today = getToday();
 
     try {
-      const [diet, water, goals, history, checkin] = await Promise.all([
+      const [diet, water, goals, history, checkin, streakData] = await Promise.all([
         fetchDietSummary(tokenRef.current, today),
         fetchWaterSummary(tokenRef.current, today),
         fetchNutritionGoals(tokenRef.current),
         fetchDietHistory(tokenRef.current, 7),
         fetchTodayCheckin(tokenRef.current).catch(() => ({ checkin: null })),
+        fetchWorkoutStreak(tokenRef.current).catch(() => ({ currentStreak: 0, totalWorkouts: 0, consistencyScore: 0 })),
       ]);
 
       setCalorieGoal(goals.dailyCalories);
@@ -309,6 +320,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         : 0;
       setSleepHours(sleep);
       setActivitySummary((prev) => ({ ...prev, sleepHours: sleep }));
+      setStreak(streakData.currentStreak ?? 0);
 
       setSyncError(null);
     } catch (err: any) {
@@ -337,6 +349,9 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
 
       const storedDevices = await AsyncStorage.getItem("@fittrack_connected_devices");
       if (storedDevices) setConnectedDevices(JSON.parse(storedDevices) as ConnectedDevice[]);
+
+      const goal = await loadStepGoalFromStorage();
+      setStepGoalState(goal);
 
       const cached = await getStepTrackingSnapshot();
       if (cached.date === getToday() && cached.steps > 0) {
@@ -516,6 +531,14 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem("@fittrack_inbody_reports", JSON.stringify(updated));
   };
 
+  const setStepGoal = async (goal: number) => {
+    const saved = await saveStepGoalToStorage(goal);
+    setStepGoalState(saved);
+    if (tokenRef.current) {
+      await syncStepGoalToProfile(tokenRef.current, saved);
+    }
+  };
+
   const connectDevice = async (deviceId: string) => {
     const now = new Date().toISOString();
 
@@ -576,6 +599,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         isLoadingNutrition,
         calorieGoal,
         waterGoal,
+        stepGoal,
         streak,
         addWater,
         logWeight,
@@ -588,6 +612,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         dismissStepPermissionBanner,
         refreshActivity,
         refreshDailyData,
+        setStepGoal,
         bmi,
         weeklyCalories,
       }}

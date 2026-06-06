@@ -1,5 +1,6 @@
 import { AnimatedHistoryBar } from "@/components/progress/AnimatedHistoryBar";
 import { MetricIllustration } from "@/components/progress/MetricIllustration";
+import { InsightCard } from "@/components/ui/InsightCard";
 import { useColors } from "@/hooks/useColors";
 import type { HistoryDayBucket, HistoryInsightDto, HistoryPeriod } from "@/lib/progress-history-api";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,7 +11,9 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { entranceFade } from "@/constants/animations";
 import Animated from "react-native-reanimated";
 
-type JournalMetric = "steps" | "calories" | "water" | "sleep";
+type JournalMetric = "steps" | "calories" | "water" | "sleep" | "weight";
+
+export type { JournalMetric };
 
 const PERIODS: { key: HistoryPeriod; label: string }[] = [
   { key: "7d", label: "7D" },
@@ -23,13 +26,14 @@ const METRICS: {
   key: JournalMetric;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-  colorKey: "primary" | "green" | "cyan" | "purple";
+  colorKey: "primary" | "green" | "cyan" | "purple" | "yellow";
   emptyHint: string;
 }[] = [
   { key: "steps", label: "Steps", icon: "footsteps", colorKey: "primary", emptyHint: "Sync steps or walk more to fill this chart." },
   { key: "calories", label: "Calories", icon: "flame", colorKey: "green", emptyHint: "Log meals to balance your daily intake." },
   { key: "water", label: "Water", icon: "water", colorKey: "cyan", emptyHint: "Track water glasses to stay hydrated." },
   { key: "sleep", label: "Sleep", icon: "moon", colorKey: "purple", emptyHint: "Log check-ins with sleep hours to see trends." },
+  { key: "weight", label: "Weight", icon: "scale", colorKey: "yellow", emptyHint: "Log weight on Home or Progress to see your trend." },
 ];
 
 function metricValue(bucket: HistoryDayBucket, metric: JournalMetric): number {
@@ -42,8 +46,34 @@ function metricValue(bucket: HistoryDayBucket, metric: JournalMetric): number {
       return bucket.waterGlasses;
     case "sleep":
       return bucket.sleepHours;
+    case "weight":
+      return bucket.weightKg ?? 0;
   }
 }
+
+function insightMatchesMetric(ins: HistoryInsightDto, metric: JournalMetric): boolean {
+  if (ins.metric === "general" || ins.id === "start") return false;
+  switch (metric) {
+    case "steps":
+      return ins.metric === "steps" || ins.id === "steps";
+    case "calories":
+      return ins.metric === "calories" || ins.metric === "nutrition" || ins.id === "calories";
+    case "water":
+      return ins.metric === "water" || ins.metric === "hydration" || ins.id === "water";
+    case "sleep":
+      return ins.metric === "sleep" || ins.id === "sleep";
+    case "weight":
+      return ins.metric === "weight" || ins.id === "weight";
+  }
+}
+
+const METRIC_FALLBACK_TIPS: Record<JournalMetric, string> = {
+  steps: "Keep syncing steps to compare this period with the last one.",
+  calories: "Log meals daily to see how your intake shifts over time.",
+  water: "Track water glasses to spot hydration trends week over week.",
+  sleep: "Log check-ins with sleep hours to unlock recovery insights.",
+  weight: "Log weight regularly to see how your trend compares across periods.",
+};
 
 interface FitnessJournalProps {
   period: HistoryPeriod;
@@ -74,10 +104,16 @@ export function FitnessJournal({
   const displayBuckets = buckets.length > 14 ? buckets.slice(-14) : buckets;
   const displayValues = displayBuckets.map((b) => metricValue(b, metric));
   const displayMax = Math.max(...displayValues, 1);
-  const isEmpty = !loading && displayValues.every((v) => v === 0);
+  const isEmpty =
+    !loading &&
+    (metric === "weight"
+      ? displayBuckets.every((b) => b.weightKg == null)
+      : displayValues.every((v) => v === 0));
   const chartAnimKey = loading
     ? `${metric}-${period}-loading`
     : `${metric}-${period}-${displayValues.join(",")}`;
+
+  const metricInsights = insights.filter((ins) => insightMatchesMetric(ins, metric));
 
   return (
     <Animated.View entering={entranceFade(2)} style={styles.outer}>
@@ -174,16 +210,30 @@ export function FitnessJournal({
                 {displayValues.map((v, i) => {
                   const bucket = displayBuckets[i];
                   const dayLabel = bucket.date.slice(5);
+                  const hasWeight = metric === "weight" && bucket.weightKg != null;
+                  const barValue = metric === "weight" ? (bucket.weightKg ?? 0) : v;
+
                   return (
                     <View key={`${bucket.date}-${chartAnimKey}`} style={styles.barColWrap}>
-                      <AnimatedHistoryBar
-                        value={v}
-                        max={displayMax}
-                        color={color}
-                        index={i}
-                        trackColor={colors.border}
-                        animKey={chartAnimKey}
-                      />
+                      {metric === "weight" && hasWeight ? (
+                        <Text style={[styles.barValue, { color }]} numberOfLines={1}>
+                          {bucket.weightKg!.toFixed(1)}
+                        </Text>
+                      ) : (
+                        <View style={styles.barValueSpacer} />
+                      )}
+                      {metric === "weight" && !hasWeight ? (
+                        <View style={[styles.barEmptyTrack, { backgroundColor: colors.border }]} />
+                      ) : (
+                        <AnimatedHistoryBar
+                          value={barValue}
+                          max={displayMax}
+                          color={color}
+                          index={i}
+                          trackColor={colors.border}
+                          animKey={chartAnimKey}
+                        />
+                      )}
                       <Text style={[styles.barLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
                         {dayLabel}
                       </Text>
@@ -195,37 +245,21 @@ export function FitnessJournal({
           </View>
         )}
 
-        {insights.length > 0 ? (
+        {metricInsights.length > 0 ? (
           <View style={styles.insightsBlock}>
-            {insights.slice(0, 2).map((ins) => (
-              <View
-                key={`${ins.id}-${chartAnimKey}`}
-                style={[styles.insightRow, { backgroundColor: colors.muted, borderColor: colors.border }]}
-              >
-                <Ionicons
-                  name={
-                    ins.trend === "up"
-                      ? "trending-up"
-                      : ins.trend === "down"
-                        ? "trending-down"
-                        : "information-circle-outline"
-                  }
-                  size={16}
-                  color={
-                    ins.trend === "up" ? colors.green : ins.trend === "down" ? colors.primary : colors.mutedForeground
-                  }
-                />
-                <Text style={[styles.insightText, { color: colors.foreground }]}>{ins.message}</Text>
-              </View>
+            {metricInsights.slice(0, 2).map((ins) => (
+              <InsightCard
+                key={`${ins.id}-${metric}-${chartAnimKey}`}
+                message={ins.message}
+                trend={ins.trend}
+              />
             ))}
           </View>
         ) : (
-          <View style={[styles.tipBox, { backgroundColor: colors.cyan + "12", borderColor: colors.cyan + "30" }]}>
-            <Ionicons name="information-circle-outline" size={16} color={colors.cyan} />
-            <Text style={[styles.tipText, { color: colors.foreground }]}>
-              Keep logging meals, water, steps, and check-ins to unlock week-over-week insights.
-            </Text>
-          </View>
+          <InsightCard
+            message={METRIC_FALLBACK_TIPS[metric]}
+            variant="tip"
+          />
         )}
       </View>
     </Animated.View>
@@ -260,24 +294,9 @@ const styles = StyleSheet.create({
   emptyHint: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 17, paddingHorizontal: 12 },
   barsRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", height: 110, gap: 2, minHeight: 110 },
   barColWrap: { flex: 1, alignItems: "center", gap: 4, minWidth: 0 },
+  barValue: { fontSize: 8, fontFamily: "Inter_600SemiBold", height: 10 },
+  barValueSpacer: { height: 10 },
+  barEmptyTrack: { height: 88, width: "70%", borderRadius: 6, opacity: 0.35 },
   barLabel: { fontSize: 9, fontFamily: "Inter_500Medium" },
   insightsBlock: { gap: 8 },
-  insightRow: {
-    flexDirection: "row",
-    gap: 8,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "flex-start",
-  },
-  insightText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
-  tipBox: {
-    flexDirection: "row",
-    gap: 8,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "flex-start",
-  },
-  tipText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
 });

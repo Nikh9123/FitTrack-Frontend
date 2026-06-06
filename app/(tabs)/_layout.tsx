@@ -28,6 +28,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "chart.line.uptrend.xyaxis", selected: "chart.line.uptrend.xyaxis" }} />
         <Label>Progress</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="trainer">
+        <Icon sf={{ default: "sparkles", selected: "sparkles" }} />
+        <Label>Coach</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
         <Label>Profile</Label>
@@ -124,6 +128,18 @@ function ClassicTabLayout() {
               <SymbolView name="chart.line.uptrend.xyaxis" tintColor={color} size={24} />
             ) : (
               <Ionicons name={focused ? "trending-up" : "trending-up-outline"} size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="trainer"
+        options={{
+          title: "Coach",
+          tabBarIcon: ({ color, focused }) =>
+            isIOS ? (
+              <SymbolView name="sparkles" tintColor={color} size={24} />
+            ) : (
+              <Ionicons name={focused ? "sparkles" : "sparkles-outline"} size={22} color={color} />
             ),
         }}
       />

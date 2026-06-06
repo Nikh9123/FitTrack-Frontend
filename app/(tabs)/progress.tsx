@@ -266,7 +266,7 @@ export default function ProgressScreen() {
   const [insightsExpanded, setInsightsExpanded] = useState(false);
 
   const [journalPeriod, setJournalPeriod] = useState<HistoryPeriod>("7d");
-  const [journalMetric, setJournalMetric] = useState<"steps" | "calories" | "water" | "sleep">("steps");
+  const [journalMetric, setJournalMetric] = useState<"steps" | "calories" | "water" | "sleep" | "weight">("steps");
   const [journalBuckets, setJournalBuckets] = useState<HistoryDayBucket[]>([]);
   const [journalInsights, setJournalInsights] = useState<HistoryInsightDto[]>([]);
   const [journalLoading, setJournalLoading] = useState(false);
@@ -480,6 +480,7 @@ export default function ProgressScreen() {
           score={dashboard.fitnessScore.score}
           label={dashboard.fitnessScore.label}
           breakdown={dashboard.fitnessScore.breakdown}
+          streakDays={currentStreak}
           colors={colors}
           animKey={`${screenAnimKey}-${dashboard.fitnessScore.score}`}
         />

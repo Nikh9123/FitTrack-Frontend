@@ -12,7 +12,7 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Circle, Ellipse, Path, Rect } from "react-native-svg";
 
-export type JournalMetric = "steps" | "calories" | "water" | "sleep";
+export type JournalMetric = "steps" | "calories" | "water" | "sleep" | "weight";
 
 interface MetricIllustrationProps {
   metric: JournalMetric;
@@ -173,25 +173,32 @@ function StepsScene({ color }: { color: string }) {
 }
 
 function WaterScene({ color }: { color: string }) {
-  const ripple = useSharedValue(0);
+  const rippleProgress = useSharedValue(0);
 
   useEffect(() => {
-    ripple.value = withRepeat(withTiming(1, { duration: 2000, easing: Easing.out(Easing.ease) }), -1);
-  }, [ripple]);
+    rippleProgress.value = withRepeat(
+      withTiming(1, { duration: 2000, easing: Easing.out(Easing.ease) }),
+      -1,
+    );
+  }, [rippleProgress]);
 
   const r1 = useAnimatedStyle(() => ({
-    transform: [{ scale: 0.6 + ripple.value * 0.8 }],
-    opacity: 0.5 * (1 - ripple.value),
+    transform: [{ scale: 0.6 + rippleProgress.value * 0.8 }],
+    opacity: 0.5 * (1 - rippleProgress.value),
   }));
-  const r2 = useAnimatedStyle(() => ({
-    transform: [{ scale: 0.5 + ((ripple.value + 0.5) % 1) * 0.9 }],
-    opacity: 0.35 * (1 - ((ripple.value + 0.5) % 1)),
-  }));
+
+  const r2 = useAnimatedStyle(() => {
+    const phase = rippleProgress.value >= 0.5 ? rippleProgress.value - 0.5 : rippleProgress.value + 0.5;
+    return {
+      transform: [{ scale: 0.5 + phase * 0.9 }],
+      opacity: 0.35 * (1 - phase),
+    };
+  });
 
   return (
     <View style={styles.sceneWrap}>
-      <Animated.View style={[styles.ripple, r2, { borderColor: color }]} />
-      <Animated.View style={[styles.ripple, r1, { borderColor: color }]} />
+      <Animated.View style={[styles.rippleRing, r2, { borderColor: color }]} />
+      <Animated.View style={[styles.rippleRing, r1, { borderColor: color }]} />
       <Svg width={80} height={72} viewBox="0 0 80 72">
         <Path
           d="M40 8 C52 28 58 38 58 48 C58 58 50 64 40 64 C30 64 22 58 22 48 C22 38 28 28 40 8 Z"
@@ -200,6 +207,52 @@ function WaterScene({ color }: { color: string }) {
         />
         <Path d="M34 36 Q40 42 46 36" stroke="#FFFFFF" strokeWidth={2} fill="none" opacity={0.5} />
       </Svg>
+    </View>
+  );
+}
+
+function WeightScene({ color }: { color: string }) {
+  const needle = useSharedValue(-0.15);
+
+  useEffect(() => {
+    needle.value = withRepeat(
+      withSequence(
+        withTiming(0.12, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+        withTiming(-0.12, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      true,
+    );
+  }, [needle]);
+
+  const needleStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${needle.value * 45}deg` }],
+  }));
+
+  return (
+    <View style={styles.sceneWrap}>
+      <Svg width={100} height={72} viewBox="0 0 100 72">
+        <Ellipse cx={50} cy={58} rx={36} ry={6} fill={color} opacity={0.15} />
+        <Path
+          d="M20 58 A30 30 0 0 1 80 58 L50 58 Z"
+          fill={color}
+          opacity={0.2}
+        />
+        <Path
+          d="M26 58 A24 24 0 0 1 74 58"
+          stroke={color}
+          strokeWidth={3}
+          fill="none"
+          strokeLinecap="round"
+        />
+        <Rect x={44} y={34} width={12} height={24} rx={4} fill={color} opacity={0.85} />
+      </Svg>
+      <Animated.View style={[styles.needleWrap, needleStyle]}>
+        <Svg width={60} height={40} viewBox="0 0 60 40">
+          <Path d="M30 34 L30 8" stroke={color} strokeWidth={3} strokeLinecap="round" />
+          <Circle cx={30} cy={34} r={4} fill={color} />
+        </Svg>
+      </Animated.View>
     </View>
   );
 }
@@ -226,6 +279,7 @@ export function MetricIllustration({ metric, color, size = 120, animKey = metric
       {metric === "calories" && <CaloriesScene color={color} />}
       {metric === "steps" && <StepsScene color={color} />}
       {metric === "water" && <WaterScene color={color} />}
+      {metric === "weight" && <WeightScene color={color} />}
     </Animated.View>
   );
 }
@@ -237,7 +291,8 @@ const styles = StyleSheet.create({
   beamWrap: { position: "absolute", top: 0, left: 0, width: 120, height: 72 },
   zText: { position: "absolute", top: 4, fontSize: 16, fontFamily: "Inter_700Bold" },
   stepRight: { position: "absolute", right: -8, top: 0 },
-  ripple: {
+  needleWrap: { position: "absolute", top: 8, left: 20 },
+  rippleRing: {
     position: "absolute",
     width: 64,
     height: 64,
