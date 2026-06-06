@@ -5,11 +5,12 @@ import {
   DailyScoreRing,
   FloatingAmbient,
   HomeAtAGlance,
-  MotivationQuoteCard,
   QuickActionsRow,
   TodaysWorkoutCard,
   WeightSparkline,
 } from "@/components/home";
+import { DailyRingsSkeleton, WeightSparklineSkeleton } from "@/components/skeletons/HomeSkeletons";
+import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { InsightCard } from "@/components/ui/InsightCard";
 import { StreakBadge } from "@/components/ui/StreakBadge";
@@ -19,7 +20,7 @@ import { useFitness } from "@/context/FitnessContext";
 import { useHomeData } from "@/hooks/useHomeData";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { hapticLight, hapticMedium, hapticSuccess } from "@/lib/haptics";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -178,7 +179,7 @@ export default function HomeScreen() {
       setWeightInput("");
       setShowWeightModal(false);
       await refreshHome();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await hapticSuccess();
     } catch {
       // surfaced via nutritionError
     }
@@ -192,16 +193,16 @@ export default function HomeScreen() {
     }
     await setStepGoal(goal);
     setShowStepGoalModal(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await hapticSuccess();
   };
 
   const openWorkout = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    hapticMedium();
     router.push("/(tabs)/workout");
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScreenEntrance style={[styles.container, { backgroundColor: colors.background }]}>
       <FloatingAmbient />
 
       <ScrollView
@@ -218,6 +219,12 @@ export default function HomeScreen() {
               </Text>
             </View>
             <StreakBadge count={streak} size="md" />
+            <TouchableOpacity
+              onPress={() => router.push("/(tabs)/trainer")}
+              style={[styles.coachBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "35" }]}
+            >
+              <Ionicons name="sparkles" size={18} color={colors.primary} />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => router.push("/(tabs)/profile")}
               style={[styles.avatarCircle, { backgroundColor: colors.primary }]}
@@ -239,17 +246,13 @@ export default function HomeScreen() {
         )}
 
         <AnimatedSection index={2}>
-          <MotivationQuoteCard />
-        </AnimatedSection>
-
-        <AnimatedSection index={3}>
           <DailyScoreRing score={dailyScore} breakdown={scoreBreakdown} animKey={dailyScore} />
         </AnimatedSection>
 
-        <AnimatedSection index={4}>
+        <AnimatedSection index={3}>
           <GlassCard padded={false} style={{ padding: 12 }}>
             {isLoadingNutrition ? (
-              <ActivityIndicator color={colors.primary} style={{ paddingVertical: 24 }} />
+              <DailyRingsSkeleton />
             ) : (
               <DailyRingsRow
                 steps={activitySummary.steps}
@@ -267,8 +270,12 @@ export default function HomeScreen() {
           </GlassCard>
         </AnimatedSection>
 
-        <AnimatedSection index={5}>
+        <AnimatedSection index={4}>
           <InsightCard message={fitnessTip} variant="motivation" compact />
+        </AnimatedSection>
+
+        <AnimatedSection index={5}>
+          <TodaysWorkoutCard plan={workoutPlan} loading={homeLoading} onPress={openWorkout} />
         </AnimatedSection>
 
         <AnimatedSection index={6}>
@@ -285,23 +292,23 @@ export default function HomeScreen() {
         </AnimatedSection>
 
         <AnimatedSection index={7}>
-          <ActivityTimeline events={timelineEvents} maxVisible={3} />
+          {homeLoading ? (
+            <WeightSparklineSkeleton />
+          ) : (
+            <WeightSparkline
+              points={weightSummary.points}
+              source={weightSummary.source}
+              latestKg={weightSummary.latestKg}
+              onPress={() => router.push("/(tabs)/progress")}
+            />
+          )}
         </AnimatedSection>
 
         <AnimatedSection index={8}>
-          <WeightSparkline
-            points={weightSummary.points}
-            source={weightSummary.source}
-            latestKg={weightSummary.latestKg}
-            onPress={() => router.push("/(tabs)/progress")}
-          />
+          <ActivityTimeline events={timelineEvents} maxVisible={2} />
         </AnimatedSection>
 
         <AnimatedSection index={9}>
-          <TodaysWorkoutCard plan={workoutPlan} loading={homeLoading} onPress={openWorkout} />
-        </AnimatedSection>
-
-        <AnimatedSection index={10}>
           <QuickActionsRow
             actions={[
               { icon: "restaurant", label: "Meal", onPress: () => router.push("/(tabs)/diet") },
@@ -321,18 +328,6 @@ export default function HomeScreen() {
                 icon: "barbell",
                 label: "Train",
                 onPress: () => router.push("/(tabs)/workout"),
-              },
-              {
-                icon: "sparkles",
-                label: "Coach",
-                onPress: () => router.push("/(tabs)/trainer"),
-                accent: colors.yellow,
-              },
-              {
-                icon: "trending-up",
-                label: "Progress",
-                onPress: () => router.push("/(tabs)/progress"),
-                accent: colors.green,
               },
             ]}
           />
@@ -425,7 +420,7 @@ export default function HomeScreen() {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
-    </View>
+    </ScreenEntrance>
   );
 }
 
@@ -433,6 +428,14 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { paddingHorizontal: 16, gap: 12 },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  coachBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
   avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 15 },
   alertCard: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1 },

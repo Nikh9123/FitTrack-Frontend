@@ -9,13 +9,21 @@ import {
 } from "@/lib/workout-session-api";
 import { fetchWorkoutHistory } from "@/lib/workout-history-api";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { WorkoutScreenSkeleton } from "@/components/skeletons/WorkoutScreenSkeleton";
+import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
+import {
+  hapticError,
+  hapticLight,
+  hapticMedium,
+  hapticSelection,
+  hapticSuccess,
+  hapticWarning,
+} from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Dimensions,
   Image,
@@ -253,7 +261,7 @@ export default function WorkoutScreen() {
           if (prev <= 1) {
             clearInterval(restIntervalRef.current!);
             setShowRestModal(false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            void hapticWarning();
             return 0;
           }
           return prev - 1;
@@ -348,7 +356,7 @@ export default function WorkoutScreen() {
   };
 
   const handleChangeWorkout = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void hapticMedium();
     Alert.alert("Change Workout Plan", "Re-run AI onboarding to get a new personalised plan?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -364,7 +372,7 @@ export default function WorkoutScreen() {
 
   // Start active workout session
   const handleStartWorkout = async (day: any) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void hapticSuccess();
     const newSession: ActiveSession = {
       dayName: day.dayName,
       focus: day.focus,
@@ -404,7 +412,7 @@ export default function WorkoutScreen() {
   // Log single set completion
   const handleLogSet = async (exerciseIdx: number, setIdx: number, weight: number, reps: number) => {
     if (!activeSession) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void hapticLight();
     
     const updatedSession = { ...activeSession };
     const ex = updatedSession.exercises[exerciseIdx];
@@ -440,7 +448,7 @@ export default function WorkoutScreen() {
   // Complete entire session
   const handleCompleteWorkout = async () => {
     if (!activeSession) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void hapticSuccess();
 
     const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
     let totalVolume = 0;
@@ -549,9 +557,9 @@ export default function WorkoutScreen() {
 
   if (!onboardingChecked) {
     return (
-      <View style={[styles.loader, { backgroundColor: BG }]}>
-        <ActivityIndicator size="large" color={ORANGE} />
-      </View>
+      <ScreenEntrance style={{ flex: 1 }}>
+        <WorkoutScreenSkeleton />
+      </ScreenEntrance>
     );
   }
   if (showOnboarding) {
@@ -599,7 +607,7 @@ export default function WorkoutScreen() {
             return (
               <TouchableOpacity
                 key={cat.key}
-                onPress={() => { Haptics.selectionAsync(); setActiveCategory(cat.key); }}
+                onPress={() => { void hapticSelection(); setActiveCategory(cat.key); }}
                 style={[styles.categoryPill, { backgroundColor: active ? cat.color : colors.card }, active && { shadowColor: cat.color, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 }]}
               >
                 <View style={[styles.catIconWrap, { backgroundColor: active ? "rgba(255,255,255,0.25)" : cat.bg }]}>
@@ -669,7 +677,7 @@ export default function WorkoutScreen() {
             key={day.dayName}
             day={day}
             index={idx}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setPlaylistDay(day); }}
+            onPress={() => { void hapticLight(); setPlaylistDay(day); }}
           />
         ))}
 
@@ -799,7 +807,7 @@ export default function WorkoutScreen() {
               {["Barbell Bench Press", "Barbell Squat", "Romanian Deadlift", "Pull-ups"].map((exName) => (
                 <TouchableOpacity
                   key={exName}
-                  onPress={() => { Haptics.selectionAsync(); setSelectedChartExercise(exName); }}
+                  onPress={() => { void hapticSelection(); setSelectedChartExercise(exName); }}
                   style={[
                     styles.exerciseSelectChip,
                     {
@@ -877,12 +885,13 @@ export default function WorkoutScreen() {
   };
 
   return (
+    <ScreenEntrance style={{ flex: 1 }}>
     <View style={[styles.root, { backgroundColor: BG }]}>
       
       {/* Resumable Session floating bar */}
       {sessionRunning && activeSession && (
         <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setPlaylistDay(null); }}
+          onPress={() => { void hapticMedium(); setPlaylistDay(null); }}
           activeOpacity={0.88}
           style={[styles.resumeBar, { backgroundColor: colors.purple, top: topPad + 4 }]}
         >
@@ -928,7 +937,7 @@ export default function WorkoutScreen() {
           {(["today", "history", "insights"] as const).map((tab) => (
             <TouchableOpacity
               key={tab}
-              onPress={() => { Haptics.selectionAsync(); setActiveTab(tab); }}
+              onPress={() => { void hapticSelection(); setActiveTab(tab); }}
               style={[
                 styles.subTabButton,
                 activeTab === tab && { backgroundColor: colors.card, ...colors.shadow.soft },
@@ -1031,13 +1040,13 @@ export default function WorkoutScreen() {
 
             <View style={styles.restModalCtas}>
               <TouchableOpacity
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setRestSecondsLeft(prev => prev + 15); }}
+                onPress={() => { void hapticLight(); setRestSecondsLeft(prev => prev + 15); }}
                 style={[styles.restSecBtn, { borderColor: "rgba(255, 255, 255, 0.15)", backgroundColor: "rgba(255,255,255,0.03)" }]}
               >
                 <Text style={[colors.typography.bodyMedium, { color: "#FFF" }]}>+15s</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); setShowRestModal(false); setRestSecondsLeft(0); }}
+                onPress={() => { void hapticSuccess(); setShowRestModal(false); setRestSecondsLeft(0); }}
                 style={[styles.restPriBtn, { backgroundColor: "#FF5E3A" }]}
               >
                 <Text style={styles.restPriBtnText}>Skip Rest</Text>
@@ -1095,6 +1104,7 @@ export default function WorkoutScreen() {
       </Modal>
 
     </View>
+    </ScreenEntrance>
   );
 }
 
@@ -1215,7 +1225,7 @@ function PlaylistView({ day, topPad, insets, onBack, onStartSession }: any) {
               partNumber={idx + 1}
               expanded={expandedId === ex.id}
               onToggle={() => {
-                Haptics.selectionAsync();
+                void hapticSelection();
                 setTutorialExercise({ ...ex, partNumber: idx + 1 });
               }}
             />
@@ -1561,11 +1571,11 @@ function ExerciseLoggingModal({ exercise, personalRecords, onClose, onSaveSet, c
     const w = parseFloat(inputs[idx].weight);
     const r = parseInt(inputs[idx].reps, 10);
     if (isNaN(w) || isNaN(r) || w <= 0 || r <= 0) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void hapticError();
       Alert.alert("Invalid Input", "Please enter positive numbers for weight and reps.");
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    void hapticSuccess();
     onSaveSet(idx, w, r);
 
     // Show dynamic toast indicator
@@ -1581,7 +1591,7 @@ function ExerciseLoggingModal({ exercise, personalRecords, onClose, onSaveSet, c
   };
 
   const changeWeight = (idx: number, delta: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void hapticLight();
     const next = [...inputs];
     const currentVal = parseFloat(next[idx].weight) || 0;
     const newVal = Math.max(0, currentVal + delta);
@@ -1590,7 +1600,7 @@ function ExerciseLoggingModal({ exercise, personalRecords, onClose, onSaveSet, c
   };
 
   const changeReps = (idx: number, delta: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void hapticLight();
     const next = [...inputs];
     const currentVal = parseInt(next[idx].reps, 10) || 0;
     const newVal = Math.max(0, currentVal + delta);

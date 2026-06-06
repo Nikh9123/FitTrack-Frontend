@@ -1,5 +1,5 @@
 import { useColors } from "@/hooks/useColors";
-import * as Haptics from "expo-haptics";
+import { hapticMedium } from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, ViewStyle } from "react-native";
@@ -44,7 +44,7 @@ export function PrimaryButton({
   };
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void hapticMedium();
     onPress();
   };
 

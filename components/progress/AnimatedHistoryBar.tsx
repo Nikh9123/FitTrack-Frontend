@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
   barCol: { flex: 1, alignItems: "center", minWidth: 0, width: "100%" },
   barTrack: {
     width: "100%",
-    maxWidth: 28,
+    maxWidth: 22,
     height: TRACK_H,
     borderRadius: 8,
     overflow: "hidden",

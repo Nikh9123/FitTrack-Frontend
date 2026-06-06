@@ -1,3 +1,5 @@
+import { useColors } from "@/hooks/useColors";
+import { hapticSelection } from "@/lib/haptics";
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
@@ -5,9 +7,7 @@ import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
-
-import { useColors } from "@/hooks/useColors";
+import { Platform, StyleSheet, View } from "react-native";
 
 function NativeTabLayout() {
   return (
@@ -28,10 +28,6 @@ function NativeTabLayout() {
         <Icon sf={{ default: "chart.line.uptrend.xyaxis", selected: "chart.line.uptrend.xyaxis" }} />
         <Label>Progress</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="trainer">
-        <Icon sf={{ default: "sparkles", selected: "sparkles" }} />
-        <Label>Coach</Label>
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
         <Label>Profile</Label>
@@ -49,6 +45,11 @@ function ClassicTabLayout() {
 
   return (
     <Tabs
+      screenListeners={{
+        tabPress: () => {
+          void hapticSelection();
+        },
+      }}
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
@@ -132,18 +133,6 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="trainer"
-        options={{
-          title: "Coach",
-          tabBarIcon: ({ color, focused }) =>
-            isIOS ? (
-              <SymbolView name="sparkles" tintColor={color} size={24} />
-            ) : (
-              <Ionicons name={focused ? "sparkles" : "sparkles-outline"} size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
@@ -156,6 +145,8 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen name="diet" options={{ href: null }} />
+      <Tabs.Screen name="trainer" options={{ href: null }} />
+      <Tabs.Screen name="gym" options={{ href: null }} />
     </Tabs>
   );
 }

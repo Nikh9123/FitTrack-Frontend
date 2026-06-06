@@ -2,7 +2,8 @@ import { useAuth, UserRole } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
+import { hapticSelection, hapticWarning } from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -26,6 +27,7 @@ const ACHIEVEMENTS = [
 ];
 
 const MENU_ITEMS = [
+  { icon: "sparkles" as const, label: "AI Coach", sub: "Chat with your fitness coach", route: "/(tabs)/trainer" as const },
   { icon: "person-outline" as const, label: "Edit Profile", sub: "Update your info" },
   { icon: "notifications-outline" as const, label: "Notifications", sub: "Push & email alerts" },
   { icon: "shield-checkmark-outline" as const, label: "Privacy & Security", sub: "Data & permissions" },
@@ -59,7 +61,7 @@ export default function ProfileScreen() {
       Alert.alert("Logout", "Are you sure?", [
         { text: "Cancel", style: "cancel" },
         { text: "Logout", style: "destructive", onPress: async () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          void hapticWarning();
           await logout();
           router.replace("/(auth)/login");
         }},
@@ -68,11 +70,12 @@ export default function ProfileScreen() {
   };
 
   const handleSwitchRole = (role: UserRole) => {
-    Haptics.selectionAsync();
+    void hapticSelection();
     switchRole(role);
   };
 
   return (
+    <ScreenEntrance style={{ flex: 1 }}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -192,7 +195,14 @@ export default function ProfileScreen() {
           {MENU_ITEMS.map((item, idx) => (
             <TouchableOpacity
               key={item.label}
-              onPress={() => { Haptics.selectionAsync(); Alert.alert("Coming Soon"); }}
+              onPress={() => {
+                void hapticSelection();
+                if ("route" in item && item.route) {
+                  router.push(item.route);
+                  return;
+                }
+                Alert.alert("Coming Soon");
+              }}
               style={[styles.menuItem, idx < MENU_ITEMS.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.border }]}
             >
               <View style={[styles.menuIconWrap, { backgroundColor: colors.muted }]}>
@@ -217,6 +227,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </ScrollView>
     </View>
+    </ScreenEntrance>
   );
 }
 

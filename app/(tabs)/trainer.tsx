@@ -1,4 +1,6 @@
 import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ChatSkeleton } from "@/components/skeletons/ChatSkeleton";
+import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAuth } from "@/context/AuthContext";
@@ -23,6 +25,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const SUGGESTIONS = [
@@ -47,6 +50,12 @@ export default function TrainerScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const tabBarHeight = Platform.OS === "web" ? 84 : 72;
 
+  const scrollToEnd = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
   const loadChat = useCallback(async () => {
     if (!token) {
       setLoading(false);
@@ -70,10 +79,8 @@ export default function TrainerScreen() {
   }, [loadChat]);
 
   useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [messages.length, thinking]);
+    if (messages.length > 0) scrollToEnd();
+  }, [messages.length, thinking, scrollToEnd]);
 
   const handleSend = async (content: string) => {
     if (!token || !thread) return;
@@ -90,6 +97,7 @@ export default function TrainerScreen() {
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, optimistic]);
+    scrollToEnd();
 
     try {
       const { userMessage, assistantMessage } = await sendChatMessage(token, thread.id, content);
@@ -125,93 +133,97 @@ export default function TrainerScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScreenEntrance style={[styles.container, { backgroundColor: colors.background }]}>
       <LinearGradient
         colors={[colors.primary + "18", "transparent"]}
         style={[styles.headerGrad, { paddingTop: topPad + 8 }]}
       />
 
-      <View style={[styles.header, { paddingTop: topPad + 8 }]}>
-        <View style={[styles.coachAvatar, { backgroundColor: colors.primary + "20" }]}>
-          <Ionicons name="sparkles" size={22} color={colors.primary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>AI Coach</Text>
-          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-            Personalized · data-driven · motivational
-          </Text>
-        </View>
-      </View>
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} size="large" />
-        </View>
-      ) : error && messages.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={[styles.emptySub, { color: colors.error, textAlign: "center", paddingHorizontal: 24 }]}>
-            {error}
-          </Text>
-          <TouchableOpacity onPress={() => void loadChat()} style={[styles.signInBtn, { backgroundColor: colors.primary, marginTop: 16 }]}>
-            <Text style={styles.signInText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <MessageBubble message={item} />}
-            contentContainerStyle={{
-              paddingHorizontal: 12,
-              paddingTop: 8,
-              paddingBottom: 12,
-            }}
-            ListHeaderComponent={
-              messages.length <= 1 ? (
-                <View style={styles.suggestionsWrap}>
-                  <Text style={[styles.suggestionsLabel, { color: colors.mutedForeground }]}>Try asking</Text>
-                  <View style={styles.suggestionsRow}>
-                    {SUGGESTIONS.map((s) => (
-                      <TouchableOpacity
-                        key={s}
-                        onPress={() => void handleSend(s)}
-                        disabled={thinking}
-                      >
-                        <GlassCard style={styles.suggestionChip}>
-                          <Text style={[styles.suggestionText, { color: colors.foreground }]}>{s}</Text>
-                        </GlassCard>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              ) : null
-            }
-            ListFooterComponent={
-              thinking ? (
-                <View style={[styles.thinkingRow, { backgroundColor: colors.muted }]}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={[styles.thinkingText, { color: colors.mutedForeground }]}>Coach is thinking...</Text>
-                </View>
-              ) : error ? (
-                <Text style={[styles.errorBanner, { color: colors.error }]}>{error}</Text>
-              ) : null
-            }
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-          />
-
-          <View style={{ marginBottom: tabBarHeight }}>
-            <ChatComposer onSend={handleSend} disabled={thinking || !thread} />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={topPad}
+      >
+        <View style={[styles.header, { paddingTop: topPad + 8 }]}>
+          <View style={[styles.coachAvatar, { backgroundColor: colors.primary + "20" }]}>
+            <Ionicons name="sparkles" size={22} color={colors.primary} />
           </View>
-        </>
-      )}
-    </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>AI Coach</Text>
+            <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+              Personalized · data-driven · motivational
+            </Text>
+          </View>
+        </View>
+
+        {loading ? (
+          <ChatSkeleton />
+        ) : error && messages.length === 0 ? (
+          <View style={styles.center}>
+            <Text style={[styles.emptySub, { color: colors.error, textAlign: "center", paddingHorizontal: 24 }]}>
+              {error}
+            </Text>
+            <TouchableOpacity
+              onPress={() => void loadChat()}
+              style={[styles.signInBtn, { backgroundColor: colors.primary, marginTop: 16 }]}
+            >
+              <Text style={styles.signInText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <FlatList
+              ref={listRef}
+              style={styles.flex}
+              data={messages}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <MessageBubble message={item} />}
+              contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              onContentSizeChange={() => scrollToEnd(false)}
+              onLayout={() => scrollToEnd(false)}
+              ListHeaderComponent={
+                messages.length <= 1 ? (
+                  <View style={styles.suggestionsWrap}>
+                    <Text style={[styles.suggestionsLabel, { color: colors.mutedForeground }]}>Try asking</Text>
+                    <View style={styles.suggestionsRow}>
+                      {SUGGESTIONS.map((s) => (
+                        <TouchableOpacity key={s} onPress={() => void handleSend(s)} disabled={thinking}>
+                          <GlassCard style={styles.suggestionChip}>
+                            <Text style={[styles.suggestionText, { color: colors.foreground }]}>{s}</Text>
+                          </GlassCard>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                ) : null
+              }
+              ListFooterComponent={
+                thinking ? (
+                  <View style={[styles.thinkingRow, { backgroundColor: colors.muted }]}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={[styles.thinkingText, { color: colors.mutedForeground }]}>Coach is thinking...</Text>
+                  </View>
+                ) : error ? (
+                  <Text style={[styles.errorBanner, { color: colors.error }]}>{error}</Text>
+                ) : null
+              }
+            />
+
+            <View style={{ paddingBottom: tabBarHeight }}>
+              <ChatComposer onSend={handleSend} disabled={thinking || !thread} includeBottomInset={false} />
+            </View>
+          </>
+        )}
+      </KeyboardAvoidingView>
+    </ScreenEntrance>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  flex: { flex: 1 },
   headerGrad: { position: "absolute", top: 0, left: 0, right: 0, height: 140 },
   header: {
     flexDirection: "row",
@@ -228,6 +240,7 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 },
   signInBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14, marginTop: 8 },
   signInText: { color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 15 },
+  listContent: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 16, flexGrow: 1 },
   suggestionsWrap: { gap: 8, marginBottom: 12 },
   suggestionsLabel: { fontSize: 12, fontFamily: "Inter_500Medium", paddingHorizontal: 4 },
   suggestionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

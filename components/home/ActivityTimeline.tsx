@@ -1,6 +1,6 @@
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import { hapticSelection } from "@/lib/haptics";
 import React, { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -39,7 +39,7 @@ export function ActivityTimeline({
         {canCollapse ? (
           <TouchableOpacity
             onPress={() => {
-              Haptics.selectionAsync();
+              void hapticSelection();
               setExpanded((v) => !v);
             }}
             hitSlop={8}

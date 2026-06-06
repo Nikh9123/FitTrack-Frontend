@@ -15,13 +15,18 @@ export function WeightSparkline({ points, source, latestKg, onPress }: WeightSpa
   const colors = useColors();
   const values = points.map((p) => p.value).filter((v) => v > 0);
 
-  const { min, max, displayValues } = useMemo(() => {
-    if (values.length === 0) return { min: 0, max: 1, displayValues: [] as number[] };
-    const lo = Math.min(...values);
-    const hi = Math.max(...values);
-    const pad = hi === lo ? 1 : (hi - lo) * 0.15;
-    return { min: lo - pad, max: hi + pad, displayValues: values };
+  const displayValues = useMemo(() => {
+    const slice = values.length > 8 ? values.slice(-8) : values;
+    return slice;
   }, [values]);
+
+  const { min, max } = useMemo(() => {
+    if (displayValues.length === 0) return { min: 0, max: 1 };
+    const lo = Math.min(...displayValues);
+    const hi = Math.max(...displayValues);
+    const pad = hi === lo ? 1 : (hi - lo) * 0.15;
+    return { min: lo - pad, max: hi + pad };
+  }, [displayValues]);
 
   const diff =
     displayValues.length >= 2 ? displayValues[displayValues.length - 1] - displayValues[0] : null;
@@ -117,10 +122,11 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "space-between",
     height: 48,
-    gap: 4,
+    gap: 6,
+    paddingHorizontal: 2,
   },
-  barWrap: { flex: 1, alignItems: "center", justifyContent: "flex-end" },
-  bar: { width: "100%", maxWidth: 22, borderRadius: 4, minHeight: 8 },
+  barWrap: { flex: 1, alignItems: "center", justifyContent: "flex-end", maxWidth: 28 },
+  bar: { width: "100%", borderRadius: 4, minHeight: 8 },
   footer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   caption: { fontSize: 11, fontFamily: "Inter_400Regular" },
   diff: { fontSize: 12, fontFamily: "Inter_600SemiBold" },

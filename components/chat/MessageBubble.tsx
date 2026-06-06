@@ -1,3 +1,4 @@
+import { FormattedCoachText } from "@/components/chat/FormattedCoachText";
 import { useColors } from "@/hooks/useColors";
 import type { ChatMessageDto } from "@/lib/chat-api";
 import React from "react";
@@ -24,7 +25,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {!isUser ? (
           <Text style={[styles.coachLabel, { color: colors.primary }]}>AI Coach</Text>
         ) : null}
-        <Text style={[styles.text, { color: isUser ? "#fff" : colors.foreground }]}>{message.content}</Text>
+        {isUser ? (
+          <Text style={[styles.text, { color: "#fff" }]}>{message.content}</Text>
+        ) : (
+          <FormattedCoachText content={message.content} color={colors.foreground} />
+        )}
       </View>
     </View>
   );

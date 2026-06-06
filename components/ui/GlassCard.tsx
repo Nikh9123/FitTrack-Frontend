@@ -1,4 +1,5 @@
 import { useColors } from "@/hooks/useColors";
+import { hapticLight } from "@/lib/haptics";
 import React, { useEffect } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
 import Animated, {
@@ -71,7 +72,10 @@ export function GlassCard({
     return (
       <Animated.View style={animatedStyle}>
         <TouchableOpacity
-          onPress={onPress}
+          onPress={() => {
+            void hapticLight();
+            onPress();
+          }}
           activeOpacity={0.8}
           style={cardStyle}
         >
