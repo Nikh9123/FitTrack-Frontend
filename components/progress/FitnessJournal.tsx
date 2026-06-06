@@ -53,6 +53,7 @@ interface FitnessJournalProps {
   buckets: HistoryDayBucket[];
   insights: HistoryInsightDto[];
   loading?: boolean;
+  lastSyncedAt?: string | null;
 }
 
 export function FitnessJournal({
@@ -63,6 +64,7 @@ export function FitnessJournal({
   buckets,
   insights,
   loading,
+  lastSyncedAt,
 }: FitnessJournalProps) {
   const colors = useColors();
   const activeMeta = METRICS.find((m) => m.key === metric)!;
@@ -92,7 +94,14 @@ export function FitnessJournal({
             <View style={[styles.titleIcon, { backgroundColor: colors.primary + "18" }]}>
               <Ionicons name="journal-outline" size={16} color={colors.primary} />
             </View>
-            <Text style={[styles.title, { color: colors.foreground }]}>Fitness Journal</Text>
+            <View>
+              <Text style={[styles.title, { color: colors.foreground }]}>Fitness Journal</Text>
+              {metric === "steps" && lastSyncedAt && (
+                <Text style={[styles.syncHint, { color: colors.mutedForeground }]}>
+                  Synced {new Date(lastSyncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.periodRow}>
             {PERIODS.map((p) => (
@@ -230,6 +239,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   titleIcon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 17, fontFamily: "Inter_700Bold" },
+  syncHint: { fontSize: 10, fontFamily: "Inter_400Regular", marginTop: 2 },
   periodRow: { flexDirection: "row", gap: 6 },
   periodBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   periodText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },

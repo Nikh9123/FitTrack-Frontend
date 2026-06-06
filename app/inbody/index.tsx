@@ -7,10 +7,12 @@ import { useColors } from "@/hooks/useColors";
 import {
   uploadInbodyReport,
   analyzeInbodyReport,
+  estimateFromMeasurements,
   getInbodyReport,
   type UploadProgress,
   type InBodyReport,
 } from "@/hooks/useInbodyService";
+import MeasurementWizard, { type MeasurementSubmitPayload } from "./measurement-wizard";
 import { useReports } from "@/hooks/useReports";
 import ReportCard from "./components/ReportCard";
 import { Ionicons } from "@expo/vector-icons";
@@ -61,7 +63,9 @@ export default function InBodyScreen() {
   const { token } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const [phase, setPhase] = useState<Phase>("upload");
+  const [phase, setPhase] = useState<Phase>("choose");
+  const [isEstimated, setIsEstimated] = useState(false);
+  const [estimateLoading, setEstimateLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
   const [metrics, setMetrics] = useState<ExtractedMetrics | null>(null);
   const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiAnalysis | null>(null);
@@ -257,6 +261,32 @@ export default function InBodyScreen() {
     }
   };
 
+  const handleEstimate = async (payload: MeasurementSubmitPayload) => {
+    if (!token) {
+      setError("Authentication required. Please log in first.");
+      return;
+    }
+    setEstimateLoading(true);
+    setError(null);
+    try {
+      const response = await estimateFromMeasurements(payload, token);
+      setMetrics(response.extractedMetrics as ExtractedMetrics);
+      setCurrentReportId(response.reportId);
+      setIsEstimated(true);
+      const analysis = parseGeminiAnalysis(response.geminiAnalysis);
+      if (analysis) setGeminiAnalysis(analysis);
+      setPhase("results");
+      setTimeout(() => setShowSmartPopup(true), 600);
+      refresh();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      setError(err.message ?? "Estimation failed");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setEstimateLoading(false);
+    }
+  };
+
   const handleSelectPlan = (type: "trainer" | "ai") => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setPlanType(type);
@@ -313,6 +343,10 @@ export default function InBodyScreen() {
       setGeminiAnalysis(parsed);
       setCurrentReportId(full.id);
       setSelectedFile(null);
+      setIsEstimated(
+        (m as Record<string, string> | undefined)?.estimated === "true" ||
+        (full as { sourceType?: string }).sourceType === "estimated",
+      );
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setPhase("results");
       setTimeout(() => setShowSmartPopup(true), 600);
@@ -387,14 +421,18 @@ export default function InBodyScreen() {
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => {
             if (phase === "results" || phase === "plan") {
-              setPhase("upload");
+              setPhase("choose");
               setSelectedFile(null);
               setMetrics(null);
               setGeminiAnalysis(null);
               setCurrentReportId(null);
+              setIsEstimated(false);
             } else if (phase === "preview" || phase === "analyzing") {
               setPhase("upload");
               setSelectedFile(null);
+            } else if (phase === "upload" || phase === "measurements") {
+              setPhase("choose");
+              setError(null);
             } else {
               if (router.canGoBack()) {
                 router.back();
@@ -410,6 +448,68 @@ export default function InBodyScreen() {
           </Text>
           <View style={{ width: 24 }} />
         </View>
+
+        {/* ══ CHOOSE PATH ══ */}
+        {phase === "choose" && (
+          <>
+            <GlassCard style={styles.uploadHero}>
+              <Text style={[colors.typography.h2, { color: colors.foreground, textAlign: "center" }]}>
+                How would you like to analyze?
+              </Text>
+              <Text style={[colors.typography.body, { color: colors.mutedForeground, textAlign: "center", lineHeight: 22 }]}>
+                Use an InBody report for clinical-grade metrics, or estimate from body measurements.
+              </Text>
+            </GlassCard>
+
+            <TouchableOpacity
+              onPress={() => { Haptics.selectionAsync(); setPhase("upload"); }}
+              activeOpacity={0.85}
+              style={[styles.uploadBtn, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+            >
+              <View style={[styles.uploadBtnIcon, { backgroundColor: colors.purple + "18" }]}>
+                <Ionicons name="scan-outline" size={24} color={colors.purple} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>Have InBody Report</Text>
+                <Text style={[colors.typography.caption, { color: colors.mutedForeground }]}>Scan or upload your report</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => { Haptics.selectionAsync(); setPhase("measurements"); }}
+              activeOpacity={0.85}
+              style={[styles.uploadBtn, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}
+            >
+              <View style={[styles.uploadBtnIcon, { backgroundColor: colors.primary + "18" }]}>
+                <Ionicons name="body-outline" size={24} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>Estimate from measurements</Text>
+                <Text style={[colors.typography.caption, { color: colors.mutedForeground }]}>Weight, height, waist & chest</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+
+            <View style={styles.myReportsHeader}>
+              <View style={styles.myReportsTitle}>
+                <Ionicons name="time-outline" size={18} color={colors.foreground} />
+                <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>My Reports</Text>
+              </View>
+            </View>
+            {reports.slice(0, 3).map((r) => (
+              <ReportCard key={r.id} report={r} onPress={handleOpenReport} onDelete={() => setDeleteTarget(r)} />
+            ))}
+          </>
+        )}
+
+        {phase === "measurements" && (
+          <MeasurementWizard
+            onSubmit={handleEstimate}
+            onBack={() => setPhase("choose")}
+            loading={estimateLoading}
+          />
+        )}
 
         {/* ══ UPLOAD PHASE ══ */}
         {phase === "upload" && (
@@ -769,10 +869,14 @@ export default function InBodyScreen() {
               <View style={styles.resultHeaderInner}>
                 <View style={{ flex: 1, gap: 8 }}>
                   <View style={styles.completeBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.green} />
-                    <Text style={[colors.typography.caption, { color: colors.green }]}>Analysis Complete</Text>
+                    <Ionicons name={isEstimated ? "information-circle" : "checkmark-circle"} size={16} color={isEstimated ? "#F59E0B" : colors.green} />
+                    <Text style={[colors.typography.caption, { color: isEstimated ? "#F59E0B" : colors.green }]}>
+                      {isEstimated ? "Estimated" : "Analysis Complete"}
+                    </Text>
                   </View>
-                  <Text style={[colors.typography.h2, { color: colors.foreground }]}>InBody Results</Text>
+                  <Text style={[colors.typography.h2, { color: colors.foreground }]}>
+                    {isEstimated ? "Body Composition Estimate" : "InBody Results"}
+                  </Text>
                   <Text style={[colors.typography.caption, { color: colors.mutedForeground }]}>
                     {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}
                   </Text>

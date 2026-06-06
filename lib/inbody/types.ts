@@ -1,4 +1,4 @@
-export type Phase = "upload" | "preview" | "analyzing" | "results" | "plan";
+export type Phase = "choose" | "upload" | "measurements" | "preview" | "analyzing" | "results" | "plan";
 export type PlanType = "trainer" | "ai" | null;
 
 export interface GeminiAnalysis {

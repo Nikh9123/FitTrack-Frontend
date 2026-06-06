@@ -320,13 +320,13 @@ export default function WorkoutScreen() {
     finally { setOnboardingChecked(true); }
   };
 
-  const persistWorkoutPlan = async (plan: any[], goal: string) => {
+  const persistWorkoutPlan = async (plan: any[], goal: string, strategy?: any, workoutLocation?: string) => {
     if (!token) return;
     try {
       await fetch(`${getApiBaseUrl()}/workout/persist`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ workoutPlan: plan, fitnessGoal: goal }),
+        body: JSON.stringify({ workoutPlan: plan, goal, strategy, workoutLocation }),
       });
     } catch (err) {}
   };
@@ -353,11 +353,11 @@ export default function WorkoutScreen() {
     } catch {}
   };
 
-  const handleOnboardingComplete = (plan: any[], goal: string, strategy: any) => {
+  const handleOnboardingComplete = (plan: any[], goal: string, strategy?: any, workoutLocation?: string) => {
     setDynamicPlan(plan);
     setActiveGoal(goal);
     setShowOnboarding(false);
-    persistWorkoutPlan(plan, goal);
+    persistWorkoutPlan(plan, goal, strategy, workoutLocation);
   };
 
   const handleChangeWorkout = () => {

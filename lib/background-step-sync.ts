@@ -14,7 +14,29 @@ function ensureTaskDefined() {
   TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
     try {
       const { refreshStepCount } = await import("@/lib/step-tracker");
-      await refreshStepCount();
+      const { syncActivityToServer } = await import("@/lib/activity-sync");
+      const { API_TOKEN_KEY } = await import("@/lib/google-oauth");
+      const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+
+      const snapshot = await refreshStepCount();
+      const token = await AsyncStorage.getItem(API_TOKEN_KEY);
+      if (token && snapshot) {
+        const { getTodayDateKey } = await import("@/lib/activity-storage");
+        const { mergeCadenceIntoMetrics } = await import("@/lib/activity-metrics");
+        const derived = mergeCadenceIntoMetrics(snapshot.steps, 0);
+        await syncActivityToServer(
+          token,
+          {
+            steps: snapshot.steps,
+            walkingMinutes: snapshot.walkingMinutes || derived.walkingMinutes,
+            runningMinutes: snapshot.runningMinutes || derived.runningMinutes,
+            sleepHours: 0,
+            caloriesBurned: snapshot.caloriesBurned || derived.caloriesBurned,
+            distanceKm: snapshot.distanceKm || derived.distanceKm,
+          },
+          getTodayDateKey(),
+        ).catch(() => {});
+      }
       return BackgroundFetch.BackgroundFetchResult.NewData;
     } catch {
       return BackgroundFetch.BackgroundFetchResult.Failed;

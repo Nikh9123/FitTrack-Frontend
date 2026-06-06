@@ -61,6 +61,9 @@ export default function HomeScreen() {
     syncError,
     nutritionError,
     isLoadingNutrition,
+    showStepPermissionBanner,
+    enableStepTracking,
+    dismissStepPermissionBanner,
   } = useFitness();
 
   const [refreshing, setRefreshing] = useState(false);
@@ -150,8 +153,23 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {showStepPermissionBanner && (
+          <GlassCard style={{ ...styles.alertCard, borderColor: colors.primary + "30" }}>
+            <Ionicons name="footsteps-outline" size={18} color={colors.primary} />
+            <Text style={[colors.typography.caption, { color: colors.foreground, flex: 1 }]}>
+              Enable step tracking for automatic daily counts.
+            </Text>
+            <TouchableOpacity onPress={() => void enableStepTracking()} style={[styles.stepBannerBtn, { backgroundColor: colors.primary }]}>
+              <Text style={styles.stepBannerBtnText}>Enable</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={dismissStepPermissionBanner} hitSlop={8}>
+              <Ionicons name="close" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </GlassCard>
+        )}
+
         {(syncError || nutritionError) && (
-          <GlassCard style={[styles.alertCard, { borderColor: colors.error + "40" }]}>
+          <GlassCard style={{ ...styles.alertCard, borderColor: colors.error + "40" }}>
             <Ionicons name="warning-outline" size={18} color={colors.error} />
             <Text style={[colors.typography.caption, { color: colors.error, flex: 1 }]}>
               {syncError ?? nutritionError}
@@ -373,6 +391,8 @@ const styles = StyleSheet.create({
   avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 15 },
   alertCard: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1 },
+  stepBannerBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  stepBannerBtnText: { color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   scoreCard: { borderRadius: 20, padding: 18, borderWidth: 1 },
   scoreRow: { flexDirection: "row", alignItems: "flex-end", gap: 6, marginTop: 4 },
   scoreNum: { fontSize: 48, fontFamily: "Inter_700Bold", letterSpacing: -1, lineHeight: 52 },

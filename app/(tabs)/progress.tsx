@@ -15,6 +15,14 @@ import {
   type HistoryInsightDto,
   type HistoryPeriod,
 } from "@/lib/progress-history-api";
+import {
+  fetchWeightChange,
+  filterTrendByPeriod,
+  formatWeightChangeMessage,
+  PERIOD_LABELS,
+  type WeightChangeDto,
+  type WeightChangePeriod,
+} from "@/lib/progress-weight-api";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -59,7 +67,6 @@ const ACHIEVEMENT_TYPE_ICON: Record<string, { icon: string; color: string }> = {
 const ENERGY_LABELS = ["Very Low 😞", "Low 😔", "Moderate 😐", "High 😊", "Excellent 🔥"];
 
 type Mode   = "weight" | "fat" | "muscle" | "calories";
-type Period = "1d" | "1w" | "1m" | "All";
 type WeightChartSource = "inbody" | "scale";
 
 // ─── AreaChart ────────────────────────────────────────────────────────────────
@@ -246,14 +253,15 @@ function CheckinModal({
 export default function ProgressScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { recentWorkouts, todayLog, bmi, weeklyCalories, refreshDailyData } = useFitness();
+  const { recentWorkouts, todayLog, bmi, weeklyCalories, refreshDailyData, lastSyncedAt } = useFitness();
   const { token } = useAuth();
   const { dashboard, aiInsights, loading, insightsLoading, logCheckin, fetchAIInsights, refreshDashboard } = useProgressAPI();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [chartMode, setChartMode] = useState<Mode>("weight");
   const [weightChartSource, setWeightChartSource] = useState<WeightChartSource>("inbody");
-  const [period, setPeriod] = useState<Period>("1w");
+  const [period, setPeriod] = useState<WeightChangePeriod>("1w");
+  const [weightChange, setWeightChange] = useState<WeightChangeDto | null>(null);
   const [checkinVisible, setCheckinVisible] = useState(false);
   const [insightsExpanded, setInsightsExpanded] = useState(false);
 
@@ -314,13 +322,29 @@ export default function ProgressScreen() {
   const activeWeightTrend =
     weightChartSource === "inbody" ? inbodyWeightPoints : manualWeightPoints;
 
+  const filteredWeightTrend = filterTrendByPeriod(activeWeightTrend, period);
+
   // ── Chart data (only real data, no demo fallback) ─────────────────────────
-  const WEIGHT_DATA = hasWeightData && activeWeightTrend.length >= 2
-    ? activeWeightTrend.map((x) => x.value)
+  const WEIGHT_DATA = hasWeightData && filteredWeightTrend.length >= 2
+    ? filteredWeightTrend.map((x) => x.value)
     : [];
-  const WEEKS = hasWeightData && activeWeightTrend.length >= 2
-    ? activeWeightTrend.map((x) => x.week)
+  const WEEKS = hasWeightData && filteredWeightTrend.length >= 2
+    ? filteredWeightTrend.map((x) => x.week)
     : [];
+
+  const loadWeightChange = useCallback(async () => {
+    if (!token) return;
+    try {
+      const change = await fetchWeightChange(token, period, weightChartSource);
+      setWeightChange(change);
+    } catch {
+      setWeightChange(null);
+    }
+  }, [token, period, weightChartSource]);
+
+  useEffect(() => {
+    if (chartMode === "weight") loadWeightChange();
+  }, [chartMode, loadWeightChange]);
 
   const inbodyFat    = dashboard.inbodyReports.filter(r => r.bodyFat).map(r => parseFloat(r.bodyFat!)).reverse();
   const inbodyMuscle = dashboard.inbodyReports.filter(r => r.muscleMass).map(r => parseFloat(r.muscleMass!)).reverse();
@@ -363,7 +387,12 @@ export default function ProgressScreen() {
   const prevVal      = active.data.length ? active.data[0] : null;
   const diff         = latestVal != null && prevVal != null ? latestVal - prevVal : null;
   const diffStr      = diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(chartMode === "calories" ? 0 : 1)} ${active.unit}` : null;
-  const isGoodChange = diff != null && (chartMode === "weight" ? diff < 0 : chartMode === "fat" ? diff < 0 : diff > 0);
+  const weightChangeMsg = formatWeightChangeMessage(weightChange);
+  const isWeightLost    = weightChange?.direction === "lost";
+  const isWeightGained  = weightChange?.direction === "gained";
+  const isGoodChange = chartMode === "weight"
+    ? isWeightLost
+    : diff != null && (chartMode === "fat" ? diff < 0 : diff > 0);
   const chartWeeks   = WEEKS.length ? WEEKS : active.data.map((_, i) => `W${i+1}`);
 
   const currentBmi    = dashboard.currentMetrics.bmi ?? bmi;
@@ -489,6 +518,7 @@ export default function ProgressScreen() {
           buckets={journalBuckets}
           insights={journalInsights}
           loading={journalLoading}
+          lastSyncedAt={lastSyncedAt}
         />
 
         {/* ── Transformation Summary (only if has inbody data) ── */}
@@ -565,17 +595,50 @@ export default function ProgressScreen() {
                   <Text style={[styles.chartCurrVal, { color: active.color }]}>
                     {latestVal.toFixed(chartMode === "calories" ? 0 : 1)} {active.unit}
                   </Text>
-                  {diffStr && chartHasData && (
-                    <View style={styles.chartDiffRow}>
-                      <Ionicons
-                        name={isGoodChange ? "arrow-down" : "arrow-up"}
-                        size={12}
-                        color={isGoodChange ? colors.green : colors.red}
-                      />
-                      <Text style={[styles.chartDiff, { color: isGoodChange ? colors.green : colors.red }]}>
-                        {diffStr} from W1
-                      </Text>
+                  {chartMode === "weight" ? (
+                    <View>
+                      <View style={styles.chartDiffRow}>
+                        {weightChange?.hasData && (
+                          <Ionicons
+                            name={isWeightLost ? "arrow-down" : isWeightGained ? "arrow-up" : "remove"}
+                            size={12}
+                            color={isWeightLost ? colors.green : isWeightGained ? "#F59E0B" : colors.mutedForeground}
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.chartDiff,
+                            {
+                              color: isWeightLost
+                                ? colors.green
+                                : isWeightGained
+                                  ? "#F59E0B"
+                                  : colors.mutedForeground,
+                            },
+                          ]}
+                        >
+                          {weightChangeMsg}
+                        </Text>
+                      </View>
+                      {weightChange?.isEstimated && weightChange.disclaimer ? (
+                        <Text style={[styles.chartDisclaimer, { color: colors.mutedForeground }]}>
+                          {weightChange.disclaimer}
+                        </Text>
+                      ) : null}
                     </View>
+                  ) : (
+                    diffStr && chartHasData && (
+                      <View style={styles.chartDiffRow}>
+                        <Ionicons
+                          name={isGoodChange ? "arrow-down" : "arrow-up"}
+                          size={12}
+                          color={isGoodChange ? colors.green : colors.red}
+                        />
+                        <Text style={[styles.chartDiff, { color: isGoodChange ? colors.green : colors.red }]}>
+                          {diffStr} from W1
+                        </Text>
+                      </View>
+                    )
                   )}
                 </>
               ) : (
@@ -585,13 +648,15 @@ export default function ProgressScreen() {
               )}
             </View>
             <View style={styles.periodRow}>
-              {(["1d", "1w", "1m", "All"] as Period[]).map((p) => (
+              {(["1d", "1w", "1m", "all"] as WeightChangePeriod[]).map((p) => (
                 <TouchableOpacity
                   key={p}
                   onPress={() => { Haptics.selectionAsync(); setPeriod(p); }}
                   style={[styles.periodBtn, period === p && { backgroundColor: active.color }]}
                 >
-                  <Text style={[styles.periodText, { color: period === p ? "#fff" : colors.mutedForeground }]}>{p}</Text>
+                  <Text style={[styles.periodText, { color: period === p ? "#fff" : colors.mutedForeground }]}>
+                    {PERIOD_LABELS[p]}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -936,6 +1001,13 @@ const styles = StyleSheet.create({
   chartCurrVal: { fontSize: 28, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   chartDiffRow: { flexDirection: "row", alignItems: "center", gap: 3, marginTop: 2 },
   chartDiff: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  chartDisclaimer: {
+    fontSize: 10,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 14,
+    marginTop: 4,
+    maxWidth: 220,
+  },
   periodRow: { flexDirection: "row", gap: 4 },
   periodBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: "#F3F4F6" },
   periodText: { fontSize: 11, fontFamily: "Inter_500Medium" },

@@ -61,6 +61,7 @@ export interface InBodyReport {
     gender?: string;
   };
   geminiAnalysis?: unknown;
+  sourceType?: "upload" | "estimated";
   createdAt: string;
 }
 
@@ -171,6 +172,42 @@ export async function analyzeInbodyReport(reportId: string, token: string): Prom
     throw new Error(msg);
   }
   return res.json() as Promise<AnalyzeResponse>;
+}
+
+export interface EstimateMeasurementsPayload {
+  weightKg?: number;
+  weightLb?: number;
+  heightCm?: number;
+  heightFeet?: number;
+  heightInches?: number;
+  waistCm: number;
+  chestCm?: number;
+}
+
+export interface EstimateResponse {
+  success: boolean;
+  reportId: string;
+  extractedMetrics: InBodyMetrics;
+  geminiAnalysis?: unknown;
+}
+
+export async function estimateFromMeasurements(
+  payload: EstimateMeasurementsPayload,
+  token: string,
+): Promise<EstimateResponse> {
+  const res = await fetch(`${getApiBaseUrl()}/inbody/estimate-from-measurements`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { message?: string }).message ?? "Estimation failed");
+  }
+  return res.json() as Promise<EstimateResponse>;
 }
 
 // ─── Delete a report permanently ─────────────────────────────────────────────

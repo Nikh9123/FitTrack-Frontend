@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import { Alert, AppState, Platform } from "react-native";
 import { useAuth } from "@/context/AuthContext";
-import { syncActivityToServer } from "@/lib/activity-sync";
+import { flushSyncQueue, syncActivityToServer } from "@/lib/activity-sync";
 import { getTodayDateKey } from "@/lib/activity-storage";
 import { registerBackgroundStepSync } from "@/lib/background-step-sync";
 import {
@@ -25,6 +25,7 @@ import {
   type DietLogDto,
 } from "@/lib/nutrition-api";
 import {
+  backfillRecentDays,
   getStepTrackingSnapshot,
   handleAppForeground,
   refreshStepCount,
@@ -116,6 +117,8 @@ interface FitnessContextType {
   stepTrackingStatus: StepTrackingStatus;
   stepTrackingError: string | null;
   syncError: string | null;
+  lastSyncedAt: string | null;
+  showStepPermissionBanner: boolean;
   nutritionError: string | null;
   isLoadingNutrition: boolean;
   calorieGoal: number;
@@ -131,6 +134,8 @@ interface FitnessContextType {
   addWorkout: (workout: Omit<Workout, "id">) => Promise<void>;
   addInBodyReport: (report: Omit<InBodyReport, "id" | "uploadedAt">) => Promise<void>;
   connectDevice: (deviceId: string) => Promise<void>;
+  enableStepTracking: () => Promise<void>;
+  dismissStepPermissionBanner: () => void;
   refreshActivity: () => Promise<void>;
   refreshDailyData: () => Promise<void>;
   bmi: number;
@@ -212,6 +217,8 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
   const [stepTrackingStatus, setStepTrackingStatus] = useState<StepTrackingStatus>("idle");
   const [stepTrackingError, setStepTrackingError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [showStepPermissionBanner, setShowStepPermissionBanner] = useState(false);
   const [nutritionError, setNutritionError] = useState<string | null>(null);
   const [isLoadingNutrition, setIsLoadingNutrition] = useState(false);
   const [calorieGoal, setCalorieGoal] = useState(2200);
@@ -229,10 +236,29 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
     syncDebounceRef.current = setTimeout(() => {
       syncActivityToServer(tokenRef.current!, summary, getToday())
-        .then(() => setSyncError(null))
+        .then(() => {
+          setSyncError(null);
+          setLastSyncedAt(new Date().toISOString());
+        })
         .catch((err: Error) => setSyncError(err.message));
     }, 3000);
   }, []);
+
+  const backfillAndSync = useCallback(async () => {
+    if (!tokenRef.current || Platform.OS === "web") return;
+    try {
+      await flushSyncQueue(tokenRef.current);
+      const days = await backfillRecentDays(7);
+      for (const day of days) {
+        const summary = snapshotToSummary(day.snapshot, sleepHours);
+        await syncActivityToServer(tokenRef.current, summary, day.date).catch(() => {});
+      }
+      setLastSyncedAt(new Date().toISOString());
+      setSyncError(null);
+    } catch {
+      // non-fatal
+    }
+  }, [sleepHours]);
 
   const applyStepSnapshot = useCallback(
     (snapshot: StepTrackingSnapshot) => {
@@ -328,12 +354,13 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isAuthenticated && token) {
       void refreshDailyData();
+      void backfillAndSync();
     } else {
       setTodayLog(emptyLog());
       setWeeklyCalories([0, 0, 0, 0, 0, 0, 0]);
       setStreak(0);
     }
-  }, [isAuthenticated, token, refreshDailyData]);
+  }, [isAuthenticated, token, refreshDailyData, backfillAndSync]);
 
   useEffect(() => {
     if (Platform.OS === "web") {
@@ -348,6 +375,10 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         const status = await startStepTracking({ requestPermission: false });
         setStepTrackingStatus(status);
         setStepTrackingError(null);
+        if (status === "idle" || status === "permission_denied") {
+          const dismissed = await AsyncStorage.getItem("@fittrack_step_banner_dismissed");
+          if (!dismissed) setShowStepPermissionBanner(true);
+        }
         await refreshActivity();
         await registerBackgroundStepSync();
       } catch {
@@ -357,8 +388,9 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
 
     const appStateSub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        void handleAppForeground().then((snapshot) => {
+        void handleAppForeground().then(async (snapshot) => {
           if (snapshot) applyStepSnapshot(snapshot);
+          if (tokenRef.current) await backfillAndSync();
         });
         if (tokenRef.current) void refreshDailyData();
       }
@@ -370,7 +402,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
       if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
       void stopStepTracking();
     };
-  }, [applyStepSnapshot, refreshActivity, refreshDailyData]);
+  }, [applyStepSnapshot, backfillAndSync, refreshActivity, refreshDailyData]);
 
   const requireAuth = () => {
     const message = "Sign in to sync meals, water, and weight to your account.";
@@ -509,6 +541,17 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem("@fittrack_connected_devices", JSON.stringify(updated));
   };
 
+  const enableStepTracking = async () => {
+    await connectDevice("phone");
+    setShowStepPermissionBanner(false);
+    await AsyncStorage.setItem("@fittrack_step_banner_dismissed", "1");
+  };
+
+  const dismissStepPermissionBanner = () => {
+    setShowStepPermissionBanner(false);
+    void AsyncStorage.setItem("@fittrack_step_banner_dismissed", "1");
+  };
+
   const bmi =
     latestWeight && latestWeight > 0
       ? parseFloat((latestWeight / (1.75 * 1.75)).toFixed(1))
@@ -527,6 +570,8 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         stepTrackingStatus,
         stepTrackingError,
         syncError,
+        lastSyncedAt,
+        showStepPermissionBanner,
         nutritionError,
         isLoadingNutrition,
         calorieGoal,
@@ -539,6 +584,8 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         addWorkout,
         addInBodyReport,
         connectDevice,
+        enableStepTracking,
+        dismissStepPermissionBanner,
         refreshActivity,
         refreshDailyData,
         bmi,

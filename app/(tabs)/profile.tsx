@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ReminderSettingsSheet } from "@/components/profile/ReminderSettingsSheet";
 
 const ACHIEVEMENTS = [
   { icon: "flame" as const, label: "12-Day\nStreak", color: "#FF6B35" },
@@ -39,6 +40,7 @@ export default function ProfileScreen() {
   const { user, logout, switchRole, refreshProfile } = useAuth();
   const { recentWorkouts, bmi, streak, todayLog } = useFitness();
   const [refreshing, setRefreshing] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "U";
@@ -192,7 +194,11 @@ export default function ProfileScreen() {
           {MENU_ITEMS.map((item, idx) => (
             <TouchableOpacity
               key={item.label}
-              onPress={() => { Haptics.selectionAsync(); Alert.alert("Coming Soon"); }}
+              onPress={() => {
+                Haptics.selectionAsync();
+                if (item.label === "Notifications") setRemindersOpen(true);
+                else Alert.alert("Coming Soon");
+              }}
               style={[styles.menuItem, idx < MENU_ITEMS.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.border }]}
             >
               <View style={[styles.menuIconWrap, { backgroundColor: colors.muted }]}>
@@ -216,6 +222,7 @@ export default function ProfileScreen() {
           <Text style={[styles.logoutText, { color: colors.red }]}>Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
+      <ReminderSettingsSheet visible={remindersOpen} onClose={() => setRemindersOpen(false)} />
     </View>
   );
 }

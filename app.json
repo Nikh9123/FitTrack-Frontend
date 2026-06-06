@@ -26,7 +26,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.ACTIVITY_RECOGNITION"
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "package": "com.sdeashirvad.fittrack"
     },
@@ -51,7 +52,15 @@
       "expo-font",
       "expo-web-browser",
       "expo-video",
-      "expo-background-fetch"
+      "expo-background-fetch",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#3B82F6",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

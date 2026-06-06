@@ -1,5 +1,8 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiBaseUrl } from "@/lib/api";
 import type { ActivitySummary } from "@/context/FitnessContext";
+
+const SYNC_QUEUE_KEY = "@fittrack_activity_sync_queue";
 
 export interface ActivitySyncPayload {
   summaryDate: string;
@@ -12,12 +15,8 @@ export interface ActivitySyncPayload {
   rawPayload?: Record<string, unknown>;
 }
 
-export async function syncActivityToServer(
-  token: string,
-  summary: ActivitySummary,
-  summaryDate: string,
-): Promise<void> {
-  const payload: ActivitySyncPayload = {
+function summaryToPayload(summary: ActivitySummary, summaryDate: string): ActivitySyncPayload {
+  return {
     summaryDate,
     steps: summary.steps,
     walkingMinutes: summary.walkingMinutes,
@@ -30,7 +29,9 @@ export async function syncActivityToServer(
       distanceKm: summary.distanceKm,
     },
   };
+}
 
+async function postActivitySync(token: string, payload: ActivitySyncPayload): Promise<void> {
   const response = await fetch(`${getApiBaseUrl()}/progress/activity/sync`, {
     method: "POST",
     headers: {
@@ -50,5 +51,57 @@ export async function syncActivityToServer(
       // ignore
     }
     throw new Error(message);
+  }
+}
+
+async function loadSyncQueue(): Promise<ActivitySyncPayload[]> {
+  try {
+    const raw = await AsyncStorage.getItem(SYNC_QUEUE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as ActivitySyncPayload[];
+  } catch {
+    return [];
+  }
+}
+
+async function saveSyncQueue(queue: ActivitySyncPayload[]): Promise<void> {
+  await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
+}
+
+export async function enqueueFailedSync(payload: ActivitySyncPayload): Promise<void> {
+  const queue = await loadSyncQueue();
+  const idx = queue.findIndex((q) => q.summaryDate === payload.summaryDate);
+  if (idx >= 0) queue[idx] = payload;
+  else queue.push(payload);
+  await saveSyncQueue(queue);
+}
+
+export async function flushSyncQueue(token: string): Promise<void> {
+  const queue = await loadSyncQueue();
+  if (!queue.length) return;
+
+  const remaining: ActivitySyncPayload[] = [];
+  for (const payload of queue) {
+    try {
+      await postActivitySync(token, payload);
+    } catch {
+      remaining.push(payload);
+    }
+  }
+  await saveSyncQueue(remaining);
+}
+
+export async function syncActivityToServer(
+  token: string,
+  summary: ActivitySummary,
+  summaryDate: string,
+): Promise<void> {
+  const payload = summaryToPayload(summary, summaryDate);
+  try {
+    await postActivitySync(token, payload);
+    await flushSyncQueue(token);
+  } catch (err) {
+    await enqueueFailedSync(payload);
+    throw err;
   }
 }

@@ -287,3 +287,57 @@ export async function getStepTrackingSnapshot(): Promise<StepTrackingSnapshot> {
 export function handleAppForeground(): Promise<StepTrackingSnapshot | null> {
   return refreshStepCount();
 }
+
+export async function getStepsForDate(dateKey: string): Promise<number | null> {
+  if (Platform.OS === "web") return null;
+
+  try {
+    const available = await Pedometer.isAvailableAsync();
+    if (!available) return null;
+
+    const permission = await Pedometer.getPermissionsAsync();
+    if (!permission.granted) return null;
+
+    const [y, m, d] = dateKey.split("-").map(Number);
+    const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+    const result = await Pedometer.getStepCountAsync(start, end);
+    return Math.max(0, result.steps);
+  } catch {
+    return null;
+  }
+}
+
+export async function backfillRecentDays(days = 7): Promise<
+  Array<{ date: string; steps: number; snapshot: StepTrackingSnapshot }>
+> {
+  if (Platform.OS === "web") return [];
+
+  const results: Array<{ date: string; steps: number; snapshot: StepTrackingSnapshot }> = [];
+  const today = new Date();
+
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateKey = getTodayDateKey(d);
+    const steps = await getStepsForDate(dateKey);
+    if (steps == null || steps === 0) continue;
+
+    const derived = mergeCadenceIntoMetrics(steps, 0);
+    const snapshot: StepTrackingSnapshot = {
+      date: dateKey,
+      steps: derived.steps,
+      walkingMinutes: derived.walkingMinutes,
+      runningMinutes: derived.runningMinutes,
+      activeMinutes: derived.activeMinutes,
+      caloriesBurned: derived.caloriesBurned,
+      distanceMeters: derived.distanceMeters,
+      distanceKm: derived.distanceKm,
+      source: "pedometer",
+      lastUpdated: new Date().toISOString(),
+    };
+    results.push({ date: dateKey, steps, snapshot });
+  }
+
+  return results;
+}
