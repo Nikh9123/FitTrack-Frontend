@@ -7,6 +7,8 @@ import {
   HomeAtAGlance,
   MotivationQuoteCard,
   QuickActionsRow,
+  TodaysWorkoutCard,
+  WeightSparkline,
 } from "@/components/home";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { InsightCard } from "@/components/ui/InsightCard";
@@ -14,11 +16,10 @@ import { StreakBadge } from "@/components/ui/StreakBadge";
 import { entranceFade } from "@/constants/animations";
 import { useAuth } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
-import { useBottomTabPadding } from "@/hooks/useBottomTabPadding";
+import { useHomeData } from "@/hooks/useHomeData";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
@@ -66,7 +67,8 @@ function AnimatedSection({ index, children }: { index: number; children: React.R
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const bottomPad = useBottomTabPadding();
+  const tabBarHeight = Platform.OS === "web" ? 84 : 72;
+  const bottomPad = insets.bottom + tabBarHeight + 24;
   const { user } = useAuth();
   const {
     todayLog,
@@ -78,15 +80,19 @@ export default function HomeScreen() {
     refreshDailyData,
     addWater,
     logWeight,
+    stepGoal,
+    setStepGoal,
     syncError,
     nutritionError,
     isLoadingNutrition,
   } = useFitness();
+  const { workoutPlan, weightSummary, loading: homeLoading, refresh: refreshHome } = useHomeData();
 
   const [refreshing, setRefreshing] = useState(false);
   const [weightInput, setWeightInput] = useState("");
   const [showWeightModal, setShowWeightModal] = useState(false);
-  const stepGoal = 10000;
+  const [showStepGoalModal, setShowStepGoalModal] = useState(false);
+  const [stepGoalInput, setStepGoalInput] = useState("");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "U";
@@ -110,7 +116,7 @@ export default function HomeScreen() {
         caloriesBurned: activitySummary.caloriesBurned,
         sleepHours: activitySummary.sleepHours,
       }),
-    [activitySummary, todayLog, calorieGoal, waterGoal],
+    [activitySummary, todayLog, calorieGoal, waterGoal, stepGoal],
   );
 
   const scoreBreakdown = useMemo(
@@ -120,7 +126,7 @@ export default function HomeScreen() {
       { label: "Water", value: todayLog.water, max: waterGoal, color: colors.cyan },
       { label: "Sleep", value: activitySummary.sleepHours, max: 8, color: colors.purple },
     ],
-    [activitySummary, todayLog, calorieGoal, waterGoal, colors],
+    [activitySummary, todayLog, calorieGoal, waterGoal, stepGoal, colors],
   );
 
   const caloriesRemaining = Math.max(calorieGoal - todayLog.calories, 0);
@@ -155,7 +161,7 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refreshActivity(), refreshDailyData()]);
+      await Promise.all([refreshActivity(), refreshDailyData(), refreshHome()]);
     } finally {
       setRefreshing(false);
     }
@@ -171,10 +177,27 @@ export default function HomeScreen() {
       await logWeight(w);
       setWeightInput("");
       setShowWeightModal(false);
+      await refreshHome();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       // surfaced via nutritionError
     }
+  };
+
+  const handleSaveStepGoal = async () => {
+    const goal = parseInt(stepGoalInput.replace(/,/g, ""), 10);
+    if (!goal || goal < 1000) {
+      Alert.alert("Invalid goal", "Enter a step goal of at least 1,000.");
+      return;
+    }
+    await setStepGoal(goal);
+    setShowStepGoalModal(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const openWorkout = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push("/(tabs)/workout");
   };
 
   return (
@@ -235,6 +258,10 @@ export default function HomeScreen() {
                 calorieGoal={calorieGoal}
                 waterGlasses={todayLog.water}
                 waterGoal={waterGoal}
+                onStepGoalPress={() => {
+                  setStepGoalInput(String(stepGoal));
+                  setShowStepGoalModal(true);
+                }}
               />
             )}
           </GlassCard>
@@ -262,33 +289,19 @@ export default function HomeScreen() {
         </AnimatedSection>
 
         <AnimatedSection index={8}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push("/(tabs)/workout");
-            }}
-          >
-            <LinearGradient
-              colors={["#1A1035", "#121826", "#0D1219"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[styles.workoutCard, { borderColor: colors.border }]}
-            >
-              <View style={styles.workoutRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[colors.typography.label, { color: colors.primary }]}>Today</Text>
-                  <Text style={[colors.typography.h3, { color: "#fff", marginTop: 4 }]}>Start Workout</Text>
-                </View>
-                <View style={[styles.workoutGo, { backgroundColor: colors.primary }]}>
-                  <Ionicons name="arrow-forward" size={20} color="#fff" />
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+          <WeightSparkline
+            points={weightSummary.points}
+            source={weightSummary.source}
+            latestKg={weightSummary.latestKg}
+            onPress={() => router.push("/(tabs)/progress")}
+          />
         </AnimatedSection>
 
         <AnimatedSection index={9}>
+          <TodaysWorkoutCard plan={workoutPlan} loading={homeLoading} onPress={openWorkout} />
+        </AnimatedSection>
+
+        <AnimatedSection index={10}>
           <QuickActionsRow
             actions={[
               { icon: "restaurant", label: "Meal", onPress: () => router.push("/(tabs)/diet") },
@@ -308,6 +321,12 @@ export default function HomeScreen() {
                 icon: "barbell",
                 label: "Train",
                 onPress: () => router.push("/(tabs)/workout"),
+              },
+              {
+                icon: "sparkles",
+                label: "Coach",
+                onPress: () => router.push("/(tabs)/trainer"),
+                accent: colors.yellow,
               },
               {
                 icon: "trending-up",
@@ -365,6 +384,47 @@ export default function HomeScreen() {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      <Modal visible={showStepGoalModal} transparent animationType="fade" onRequestClose={() => setShowStepGoalModal(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowStepGoalModal(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalCenter}>
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[colors.typography.h3, { color: colors.foreground }]}>Daily Step Goal</Text>
+                <Text style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: 4 }]}>
+                  Tap the Steps ring anytime to change this
+                </Text>
+                <TextInput
+                  value={stepGoalInput}
+                  onChangeText={setStepGoalInput}
+                  placeholder="Steps per day"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="number-pad"
+                  autoFocus
+                  style={[
+                    styles.weightInput,
+                    { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input },
+                  ]}
+                />
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    onPress={() => setShowStepGoalModal(false)}
+                    style={[styles.modalBtn, { borderColor: colors.border }]}
+                  >
+                    <Text style={[colors.typography.bodyMedium, { color: colors.mutedForeground }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => void handleSaveStepGoal()}
+                    style={[styles.modalBtn, styles.modalSave, { backgroundColor: colors.primary }]}
+                  >
+                    <Text style={[colors.typography.bodyMedium, { color: "#fff" }]}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -376,15 +436,6 @@ const styles = StyleSheet.create({
   avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 15 },
   alertCard: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1 },
-  workoutCard: { borderRadius: 18, padding: 16, borderWidth: 1 },
-  workoutRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  workoutGo: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",

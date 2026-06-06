@@ -20,6 +20,14 @@ function useCountUp(target: number, duration = 900) {
   return value;
 }
 
+const BREAKDOWN_LABELS: Record<string, string> = {
+  streak: "Streak",
+  bodyComp: "Body comp",
+  recovery: "Recovery",
+  consistency: "Logging",
+  achievements: "Achievements",
+};
+
 function BreakdownBar({
   label,
   pts,
@@ -52,7 +60,7 @@ function BreakdownBar({
       <View style={[styles.breakdownTrack, { backgroundColor: trackColor + "40" }]}>
         <Animated.View style={[styles.breakdownFill, { backgroundColor: color }, fillStyle]} />
       </View>
-      <Text style={[styles.breakdownPts, { color }]}>{pts}</Text>
+      <Text style={[styles.breakdownPts, { color }]}>{pts}/{maxPts}</Text>
     </View>
   );
 }
@@ -63,12 +71,15 @@ export function AnimatedFitnessScoreCard({
   breakdown,
   colors,
   animKey,
+  streakDays,
 }: {
   score: number;
   label: string;
   breakdown: Record<string, number>;
   colors: any;
   animKey?: string | number;
+  /** Raw workout streak days — shown beside the streak score component for clarity */
+  streakDays?: number;
 }) {
   const scoreColor =
     score >= 80 ? colors.green : score >= 60 ? colors.primary : score >= 40 ? "#F59E0B" : colors.red;
@@ -98,17 +109,24 @@ export function AnimatedFitnessScoreCard({
           <Text style={[styles.scoreLabel, { color: colors.mutedForeground }]}>AI FITNESS SCORE</Text>
           <Text style={[styles.scoreLabel2, { color: colors.foreground }]}>{label}</Text>
           <View style={styles.breakdownList}>
-            {Object.entries(breakdown).map(([key, pts], i) => (
-              <BreakdownBar
-                key={key}
-                label={key.charAt(0).toUpperCase() + key.slice(1)}
-                pts={pts as number}
-                maxPts={20}
-                color={scoreColor}
-                delay={i * 80}
-                trackColor={colors.mutedForeground}
-              />
-            ))}
+            {Object.entries(breakdown).map(([key, pts], i) => {
+              const baseLabel = BREAKDOWN_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
+              const rowLabel =
+                key === "streak" && streakDays != null && streakDays > 0
+                  ? `${baseLabel} (${streakDays}d)`
+                  : baseLabel;
+              return (
+                <BreakdownBar
+                  key={key}
+                  label={rowLabel}
+                  pts={pts as number}
+                  maxPts={20}
+                  color={scoreColor}
+                  delay={i * 80}
+                  trackColor={colors.mutedForeground}
+                />
+              );
+            })}
           </View>
         </View>
       </View>
@@ -127,8 +145,8 @@ const styles = StyleSheet.create({
   scoreLabel2: { fontSize: 18, fontFamily: "Inter_700Bold" },
   breakdownList: { gap: 5, marginTop: 4 },
   breakdownRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  breakdownKey: { fontSize: 10, fontFamily: "Inter_400Regular", width: 70 },
+  breakdownKey: { fontSize: 10, fontFamily: "Inter_400Regular", width: 88 },
   breakdownTrack: { flex: 1, height: 4, borderRadius: 2, overflow: "hidden" },
   breakdownFill: { height: 4, borderRadius: 2 },
-  breakdownPts: { fontSize: 10, fontFamily: "Inter_600SemiBold", width: 22, textAlign: "right" },
+  breakdownPts: { fontSize: 10, fontFamily: "Inter_600SemiBold", width: 36, textAlign: "right" },
 });

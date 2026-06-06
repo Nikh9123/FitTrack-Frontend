@@ -1,7 +1,7 @@
 import { ProgressRing } from "@/components/ui/ProgressRing";
 import { useColors } from "@/hooks/useColors";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface DailyRingsRowProps {
   steps: number;
@@ -10,6 +10,7 @@ interface DailyRingsRowProps {
   calorieGoal: number;
   waterGlasses: number;
   waterGoal: number;
+  onStepGoalPress?: () => void;
 }
 
 export function DailyRingsRow({
@@ -19,6 +20,7 @@ export function DailyRingsRow({
   calorieGoal,
   waterGlasses,
   waterGoal,
+  onStepGoalPress,
 }: DailyRingsRowProps) {
   const colors = useColors();
   const track = (colors as { ringTrack?: string }).ringTrack ?? colors.border;
@@ -49,25 +51,41 @@ export function DailyRingsRow({
 
   return (
     <View style={styles.row}>
-      {rings.map((ring) => (
-        <View key={ring.label} style={styles.item}>
-          <ProgressRing
-            size={78}
-            strokeWidth={7}
-            progress={ring.progress}
-            color={ring.color}
-            trackColor={track}
-            label={ring.value}
-            sublabel={ring.sub}
-          />
-          <Text
-            style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: 6, textAlign: "center" }]}
-            numberOfLines={1}
-          >
-            {ring.label}
-          </Text>
-        </View>
-      ))}
+      {rings.map((ring, index) => {
+        const content = (
+          <>
+            <ProgressRing
+              size={78}
+              strokeWidth={7}
+              progress={ring.progress}
+              color={ring.color}
+              trackColor={track}
+              label={ring.value}
+              sublabel={ring.sub}
+            />
+            <Text
+              style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: 6, textAlign: "center" }]}
+              numberOfLines={1}
+            >
+              {ring.label}
+            </Text>
+          </>
+        );
+
+        if (index === 0 && onStepGoalPress) {
+          return (
+            <TouchableOpacity key={ring.label} style={styles.item} onPress={onStepGoalPress} activeOpacity={0.7}>
+              {content}
+            </TouchableOpacity>
+          );
+        }
+
+        return (
+          <View key={ring.label} style={styles.item}>
+            {content}
+          </View>
+        );
+      })}
     </View>
   );
 }

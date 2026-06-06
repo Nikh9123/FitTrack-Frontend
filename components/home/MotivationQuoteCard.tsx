@@ -1,5 +1,9 @@
 import { entranceFade } from "@/constants/animations";
-import { fetchMotivationQuote, type MotivationQuote } from "@/lib/motivation-quotes";
+import {
+  fetchMotivationQuote,
+  MotivationQuoteError,
+  type MotivationQuote,
+} from "@/lib/motivation-quotes";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
@@ -20,13 +24,21 @@ function PulsingIcon() {
 export function MotivationQuoteCard() {
   const colors = useColors();
   const [quote, setQuote] = useState<MotivationQuote | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadQuote = useCallback(async () => {
     setLoading(true);
-    const next = await fetchMotivationQuote();
-    setQuote(next);
-    setLoading(false);
+    setError(null);
+    try {
+      const next = await fetchMotivationQuote();
+      setQuote(next);
+    } catch (err) {
+      setQuote(null);
+      setError(err instanceof MotivationQuoteError ? err.message : "Could not load quote.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useFocusEffect(
@@ -53,8 +65,15 @@ export function MotivationQuoteCard() {
           </TouchableOpacity>
         </View>
 
-        {loading && !quote ? (
+        {loading && !quote && !error ? (
           <ActivityIndicator color={colors.primary} style={{ paddingVertical: 12 }} />
+        ) : error ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="cloud-offline-outline" size={18} color={colors.mutedForeground} />
+            <Text style={[colors.typography.caption, { color: colors.mutedForeground, flex: 1, lineHeight: 18 }]}>
+              {error}
+            </Text>
+          </View>
         ) : quote ? (
           <Animated.View
             key={quote.content}
@@ -100,5 +119,11 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     fontFamily: "Inter_500Medium",
     fontStyle: "italic",
+  },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingVertical: 4,
   },
 });

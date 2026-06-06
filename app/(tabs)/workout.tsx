@@ -7,11 +7,13 @@ import {
   logWorkoutSetApi,
   startWorkoutSessionApi,
 } from "@/lib/workout-session-api";
+import { fetchWorkoutHistory } from "@/lib/workout-history-api";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -146,45 +148,8 @@ const DIFF_COLOR: Record<string, string> = {
 };
 
 // ─── TYPES FOR PERSISTENCE ─────────────────────────────────────────────────────
-export interface SetLog {
-  reps: number;
-  weight: number;
-  completed: boolean;
-}
-
-export interface ActiveSession {
-  dayName: string;
-  focus: string;
-  startedAt: string;
-  workoutSessionId?: string;
-  currentExerciseIdx: number;
-  exercises: Array<{
-    id: string;
-    name: string;
-    target: string;
-    sets: number;
-    repsRange: string;
-    restSeconds: number;
-    difficulty: string;
-    setsLogged: SetLog[];
-    completed: boolean;
-  }>;
-}
-
-export interface CompletedWorkout {
-  id: string;
-  dayName: string;
-  focus: string;
-  date: string;
-  duration: number; // minutes
-  calories: number;
-  totalVolume: number; // kg
-  setsCount: number;
-  exercises: Array<{
-    name: string;
-    setsLogged: SetLog[];
-  }>;
-}
+export type { ActiveSession, CompletedWorkout, SetLog } from "@/lib/workout-types";
+import type { ActiveSession, CompletedWorkout, SetLog } from "@/lib/workout-types";
 
 // ─── Progression Chart Helper ───
 function ProgressionLineChart({ data, width: chartW, height: chartH, color }: { data: number[]; width: number; height: number; color: string }) {
@@ -219,7 +184,7 @@ function ProgressionLineChart({ data, width: chartW, height: chartH, color }: { 
 
 // ─── Main Workout Tab Component ───────────────────────────────────────────────
 export default function WorkoutScreen() {
-  const { addWorkout } = useFitness();
+  const { addWorkout, refreshDailyData } = useFitness();
   const { token, user } = useAuth();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -342,9 +307,11 @@ export default function WorkoutScreen() {
         const diff = Math.max(0, Math.floor((Date.now() - startedTime) / 1000));
         setElapsedSeconds(diff);
       }
-      const savedHistory = await AsyncStorage.getItem("@fittrack_workout_history");
-      if (savedHistory) {
-        setHistory(JSON.parse(savedHistory) as CompletedWorkout[]);
+      if (!token) {
+        const savedHistory = await AsyncStorage.getItem("@fittrack_workout_history");
+        if (savedHistory) {
+          setHistory(JSON.parse(savedHistory) as CompletedWorkout[]);
+        }
       }
       const savedPRs = await AsyncStorage.getItem("@fittrack_personal_records");
       if (savedPRs) {
@@ -352,6 +319,26 @@ export default function WorkoutScreen() {
       }
     } catch {}
   };
+
+  const loadWorkoutHistory = useCallback(async () => {
+    if (!token) return;
+    try {
+      const apiHistory = await fetchWorkoutHistory(token, 50);
+      setHistory(apiHistory);
+      await AsyncStorage.setItem("@fittrack_workout_history", JSON.stringify(apiHistory));
+    } catch {
+      const savedHistory = await AsyncStorage.getItem("@fittrack_workout_history");
+      if (savedHistory) {
+        setHistory(JSON.parse(savedHistory) as CompletedWorkout[]);
+      }
+    }
+  }, [token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadWorkoutHistory();
+    }, [loadWorkoutHistory]),
+  );
 
   const handleOnboardingComplete = (plan: any[], goal: string, strategy: any) => {
     setDynamicPlan(plan);
@@ -534,9 +521,13 @@ export default function WorkoutScreen() {
           totalDuration: elapsedSeconds,
           caloriesBurned: calculatedCalories,
         });
+        await refreshDailyData();
+        await loadWorkoutHistory();
       } catch (err: any) {
         Alert.alert("Sync warning", err.message || "Workout saved locally but server sync failed.");
       }
+    } else if (token) {
+      await loadWorkoutHistory();
     }
   };
 
