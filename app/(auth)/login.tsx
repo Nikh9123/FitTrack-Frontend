@@ -5,7 +5,7 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -37,7 +37,7 @@ const ROLES: {
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
-  const { login, register, loginWithPhone, loginWithGoogle } = useAuth();
+  const { login, register, loginWithPhone, loginWithGoogle, user, isAuthenticated } = useAuth();
 
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [inputMode, setInputMode] = useState<InputMode>("email");
@@ -55,7 +55,15 @@ export default function LoginScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const navigateAfterAuth = () => router.replace("/");
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.onboardingCompleted) {
+        router.replace("/(tabs)");
+      } else {
+        router.replace("/(auth)/setup");
+      }
+    }
+  }, [isAuthenticated, user]);
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === "web") {
@@ -70,7 +78,6 @@ export default function LoginScreen() {
     setGoogleLoading(true);
     try {
       await loginWithGoogle();
-      navigateAfterAuth();
     } catch (e: any) {
       if (e.message !== "Google sign-in was cancelled") {
         showAlert("Google Sign-In Failed", e.message || "Please try again.");
@@ -101,7 +108,6 @@ export default function LoginScreen() {
       } else {
         await login(email.trim(), password);
       }
-      navigateAfterAuth();
     } catch (e: any) {
       showAlert(
         authMode === "register" ? "Registration Failed" : "Login Failed",
@@ -129,7 +135,6 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await loginWithPhone(phone, otp);
-      navigateAfterAuth();
     } catch (e: any) {
       showAlert("Verification Failed", e.message || "Please try again.");
     } finally {

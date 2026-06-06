@@ -1,7 +1,9 @@
+import { MOTION } from "@/constants/animations";
 import { useColors } from "@/hooks/useColors";
 import React, { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, {
+  cancelAnimation,
   useAnimatedProps,
   useSharedValue,
   withTiming,
@@ -19,6 +21,8 @@ interface ProgressRingProps {
   label?: string;
   sublabel?: string;
   centerContent?: React.ReactNode;
+  /** Change to replay ring fill from zero */
+  animKey?: string | number;
 }
 
 export function ProgressRing({
@@ -30,6 +34,7 @@ export function ProgressRing({
   label,
   sublabel,
   centerContent,
+  animKey = progress,
 }: ProgressRingProps) {
   const colors = useColors();
   const radius = (size - strokeWidth) / 2;
@@ -39,8 +44,10 @@ export function ProgressRing({
   const animatedProgress = useSharedValue(0);
 
   useEffect(() => {
-    animatedProgress.value = withTiming(clampedProgress, { duration: 1200 });
-  }, [clampedProgress]);
+    cancelAnimation(animatedProgress);
+    animatedProgress.value = 0;
+    animatedProgress.value = withTiming(clampedProgress, MOTION.timingRing);
+  }, [clampedProgress, animKey, animatedProgress]);
 
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: circumference * (1 - animatedProgress.value),

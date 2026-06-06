@@ -2,11 +2,24 @@ import { useFitness } from "@/context/FitnessContext";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useProgressAPI } from "@/hooks/useProgressAPI";
+import { AnimatedFitnessScoreCard } from "@/components/progress/AnimatedFitnessScoreCard";
+import { AnimatedStatCard } from "@/components/progress/AnimatedStatCard";
+import { FitnessJournal } from "@/components/progress/FitnessJournal";
+import { MetricIllustration } from "@/components/progress/MetricIllustration";
+import { PulseGlow } from "@/components/progress/PulseGlow";
+import { entranceFade } from "@/constants/animations";
+import {
+  fetchProgressHistory,
+  fetchProgressInsights,
+  type HistoryDayBucket,
+  type HistoryInsightDto,
+  type HistoryPeriod,
+} from "@/lib/progress-history-api";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useState, useEffect } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -20,11 +33,14 @@ import {
 } from "react-native";
 import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Circle } from "react-native-svg";
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
+  withRepeat,
+  withSequence,
   withSpring,
-  useEffect as useAnimatedEffect,
+  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -44,6 +60,7 @@ const ENERGY_LABELS = ["Very Low 😞", "Low 😔", "Moderate 😐", "High 😊"
 
 type Mode   = "weight" | "fat" | "muscle" | "calories";
 type Period = "1d" | "1w" | "1m" | "All";
+type WeightChartSource = "inbody" | "scale";
 
 // ─── AreaChart ────────────────────────────────────────────────────────────────
 
@@ -81,7 +98,7 @@ function AreaChart({ data, color, width, height }: { data: number[]; color: stri
 
 function AnimatedBar({ targetH, color, delay }: { targetH: number; color: string; delay: number }) {
   const h = useSharedValue(0);
-  useAnimatedEffect(() => { h.value = withDelay(delay, withSpring(targetH, { damping: 14 })); });
+  useEffect(() => { h.value = withDelay(delay, withSpring(targetH, { damping: 14 })); }, [targetH]);
   const style = useAnimatedStyle(() => ({ height: h.value }));
   return <Animated.View style={[{ width: "100%", borderRadius: 6, minHeight: 4 }, style, { backgroundColor: color }]} />;
 }
@@ -94,11 +111,28 @@ function EmptyCard({
   icon: string; title: string; subtitle: string;
   ctaLabel?: string; ctaIcon?: string; onCta?: () => void; colors: any;
 }) {
+  const float = useSharedValue(0);
+  useEffect(() => {
+    float.value = withRepeat(
+      withSequence(
+        withTiming(-5, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+    );
+  }, [float]);
+  const iconAnim = useAnimatedStyle(() => ({
+    transform: [{ translateY: float.value }],
+  }));
+
   return (
-    <View style={[emptyStyles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[emptyStyles.iconWrap, { backgroundColor: colors.primary + "12" }]}>
+    <Animated.View
+      entering={entranceFade(3)}
+      style={[emptyStyles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+    >
+      <Animated.View style={[emptyStyles.iconWrap, { backgroundColor: colors.primary + "12" }, iconAnim]}>
         <Ionicons name={icon as any} size={26} color={colors.primary} />
-      </View>
+      </Animated.View>
       <Text style={[emptyStyles.title, { color: colors.foreground }]}>{title}</Text>
       <Text style={[emptyStyles.subtitle, { color: colors.mutedForeground }]}>{subtitle}</Text>
       {ctaLabel && onCta && (
@@ -110,60 +144,7 @@ function EmptyCard({
           <Text style={emptyStyles.ctaText}>{ctaLabel}</Text>
         </TouchableOpacity>
       )}
-    </View>
-  );
-}
-
-// ─── Fitness Score Card ───────────────────────────────────────────────────────
-
-function FitnessScoreCard({ score, label, breakdown, colors }: any) {
-  const r = 52, cx = 64, cy = 64, stroke = 10;
-  const circ = 2 * Math.PI * r;
-  const progress = Math.min(score / 100, 1);
-  const dash = circ * progress;
-
-  const scoreColor = score >= 80 ? colors.green : score >= 60 ? colors.primary : score >= 40 ? "#F59E0B" : colors.red;
-
-  return (
-    <View style={[styles.scoreCard, { backgroundColor: colors.card, ...colors.shadow.medium }]}>
-      <LinearGradient
-        colors={[scoreColor + "10", colors.purple + "06"]}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View style={styles.scoreCardInner}>
-        <View style={styles.scoreRingWrap}>
-          <Svg width={128} height={128} viewBox="0 0 128 128">
-            <Circle cx={cx} cy={cy} r={r} stroke={colors.border} strokeWidth={stroke} fill="none" />
-            <Circle
-              cx={cx} cy={cy} r={r}
-              stroke={scoreColor} strokeWidth={stroke} fill="none"
-              strokeDasharray={`${dash} ${circ - dash}`}
-              strokeDashoffset={circ * 0.25}
-              strokeLinecap="round"
-            />
-          </Svg>
-          <View style={styles.scoreCenter}>
-            <Text style={[styles.scoreNum, { color: scoreColor }]}>{score}</Text>
-            <Text style={[styles.scoreMax, { color: colors.mutedForeground }]}>/100</Text>
-          </View>
-        </View>
-        <View style={styles.scoreInfo}>
-          <Text style={[styles.scoreLabel, { color: colors.mutedForeground }]}>AI FITNESS SCORE</Text>
-          <Text style={[styles.scoreLabel2, { color: colors.foreground }]}>{label}</Text>
-          <View style={styles.breakdownList}>
-            {Object.entries(breakdown).map(([key, pts]) => (
-              <View key={key} style={styles.breakdownRow}>
-                <Text style={[styles.breakdownKey, { color: colors.mutedForeground }]}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
-                <View style={[styles.breakdownBar, { backgroundColor: colors.border }]}>
-                  <View style={[styles.breakdownFill, { backgroundColor: scoreColor, width: `${((pts as number) / 20) * 100}%` }]} />
-                </View>
-                <Text style={[styles.breakdownPts, { color: scoreColor }]}>{pts as number}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -265,32 +246,87 @@ function CheckinModal({
 export default function ProgressScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { recentWorkouts, todayLog, bmi, weeklyCalories } = useFitness();
+  const { recentWorkouts, todayLog, bmi, weeklyCalories, refreshDailyData } = useFitness();
   const { token } = useAuth();
   const { dashboard, aiInsights, loading, insightsLoading, logCheckin, fetchAIInsights, refreshDashboard } = useProgressAPI();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [chartMode, setChartMode] = useState<Mode>("weight");
+  const [weightChartSource, setWeightChartSource] = useState<WeightChartSource>("inbody");
   const [period, setPeriod] = useState<Period>("1w");
   const [checkinVisible, setCheckinVisible] = useState(false);
   const [insightsExpanded, setInsightsExpanded] = useState(false);
 
-  // ── Determine which data sections have real data ──────────────────────────
-  const hasWeightData    = dashboard.weightTrend.length >= 2;
-  const hasInbodyData    = dashboard.inbodyReports.length >= 1;
-  const hasAchievements  = dashboard.achievements.length > 0;
-  const hasInsights      = aiInsights.insights.length > 0;
-  const hasAnyData       = hasWeightData || hasInbodyData || dashboard.workoutStats.streak > 0;
+  const [journalPeriod, setJournalPeriod] = useState<HistoryPeriod>("7d");
+  const [journalMetric, setJournalMetric] = useState<"steps" | "calories" | "water" | "sleep">("steps");
+  const [journalBuckets, setJournalBuckets] = useState<HistoryDayBucket[]>([]);
+  const [journalInsights, setJournalInsights] = useState<HistoryInsightDto[]>([]);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [screenAnimKey, setScreenAnimKey] = useState(0);
+
+  const loadJournal = useCallback(async () => {
+    if (!token) return;
+    setJournalLoading(true);
+    try {
+      const [history, insights] = await Promise.all([
+        fetchProgressHistory(token, journalPeriod),
+        fetchProgressInsights(token, journalPeriod),
+      ]);
+      setJournalBuckets(history.buckets);
+      setJournalInsights(insights);
+      setScreenAnimKey((k) => k + 1);
+    } catch {
+      setJournalBuckets([]);
+      setJournalInsights([]);
+    } finally {
+      setJournalLoading(false);
+    }
+  }, [token, journalPeriod]);
+
+  useEffect(() => {
+    loadJournal();
+  }, [loadJournal]);
+
+  const inbodyWeightPoints = dashboard.inbodyWeightTrend ?? [];
+  const manualWeightPoints = dashboard.manualWeightTrend ?? [];
+  const hasInbodyWeightChart = inbodyWeightPoints.length >= 2;
+  const hasManualWeightChart = manualWeightPoints.length >= 2;
+  const hasWeightData = hasInbodyWeightChart || hasManualWeightChart;
+  const hasInbodyData = dashboard.inbodyReports.length >= 1;
+  const hasAchievements = dashboard.achievements.length > 0;
+  const hasInsights = aiInsights.insights.length > 0;
+  const hasAnyData = hasWeightData || hasInbodyData || dashboard.workoutStats.streak > 0;
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshDashboard();
+    }, [refreshDashboard]),
+  );
+
+  useEffect(() => {
+    if (weightChartSource === "inbody" && !hasInbodyWeightChart && hasManualWeightChart) {
+      setWeightChartSource("scale");
+    } else if (weightChartSource === "scale" && !hasManualWeightChart && hasInbodyWeightChart) {
+      setWeightChartSource("inbody");
+    }
+  }, [hasInbodyWeightChart, hasManualWeightChart, weightChartSource]);
+
+  const activeWeightTrend =
+    weightChartSource === "inbody" ? inbodyWeightPoints : manualWeightPoints;
 
   // ── Chart data (only real data, no demo fallback) ─────────────────────────
-  const WEIGHT_DATA = hasWeightData ? dashboard.weightTrend.map(x => x.value) : [];
-  const WEEKS       = hasWeightData ? dashboard.weightTrend.map(x => x.week) : [];
+  const WEIGHT_DATA = hasWeightData && activeWeightTrend.length >= 2
+    ? activeWeightTrend.map((x) => x.value)
+    : [];
+  const WEEKS = hasWeightData && activeWeightTrend.length >= 2
+    ? activeWeightTrend.map((x) => x.week)
+    : [];
 
   const inbodyFat    = dashboard.inbodyReports.filter(r => r.bodyFat).map(r => parseFloat(r.bodyFat!)).reverse();
   const inbodyMuscle = dashboard.inbodyReports.filter(r => r.muscleMass).map(r => parseFloat(r.muscleMass!)).reverse();
   const FAT_DATA    = inbodyFat.length >= 2 ? inbodyFat : [];
   const MUSCLE_DATA = inbodyMuscle.length >= 2 ? inbodyMuscle : [];
-  const CAL_DATA: number[] = [];
+  const CAL_DATA: number[] = weeklyCalories.some((c) => c > 0) ? weeklyCalories : [];
 
   // ── Transformation summary ────────────────────────────────────────────────
   const ts = dashboard.transformationSummary;
@@ -318,7 +354,12 @@ export default function ProgressScreen() {
   };
 
   const active       = modeMap[chartMode];
-  const latestVal    = active.data.length ? active.data[active.data.length - 1] : null;
+  const latestVal    =
+    chartMode === "weight" && WEIGHT_DATA.length
+      ? WEIGHT_DATA[WEIGHT_DATA.length - 1]
+      : active.data.length
+        ? active.data[active.data.length - 1]
+        : null;
   const prevVal      = active.data.length ? active.data[0] : null;
   const diff         = latestVal != null && prevVal != null ? latestVal - prevVal : null;
   const diffStr      = diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(chartMode === "calories" ? 0 : 1)} ${active.unit}` : null;
@@ -332,6 +373,7 @@ export default function ProgressScreen() {
   const handleCheckin = async (data: any) => {
     await logCheckin(data);
     setCheckinVisible(false);
+    await refreshDailyData();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -341,7 +383,12 @@ export default function ProgressScreen() {
   };
 
   // ── Chart has data for current mode ──────────────────────────────────────
-  const chartHasData = active.data.length >= 2;
+  const chartHasData =
+    chartMode === "calories"
+      ? CAL_DATA.length >= 2
+      : chartMode === "weight"
+        ? WEIGHT_DATA.length >= 2
+        : active.data.length >= 2;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -400,40 +447,53 @@ export default function ProgressScreen() {
         )}
 
         {/* ── Fitness Score Card ── */}
-        <FitnessScoreCard
+        <AnimatedFitnessScoreCard
           score={dashboard.fitnessScore.score}
           label={dashboard.fitnessScore.label}
           breakdown={dashboard.fitnessScore.breakdown}
           colors={colors}
+          animKey={`${screenAnimKey}-${dashboard.fitnessScore.score}`}
         />
 
         {/* ── Daily Check-in ── */}
-        <TouchableOpacity
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setCheckinVisible(true); }}
-          style={[styles.checkinBanner, {
-            backgroundColor: hasCheckedIn ? colors.green + "12" : colors.primary + "12",
-            borderColor: hasCheckedIn ? colors.green : colors.primary,
-          }]}
-        >
-          <View style={[styles.checkinIcon, { backgroundColor: hasCheckedIn ? colors.green + "20" : colors.primary + "20" }]}>
-            <Ionicons name={hasCheckedIn ? "checkmark-circle" : "pulse-outline"} size={20} color={hasCheckedIn ? colors.green : colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.checkinTitle, { color: hasCheckedIn ? colors.green : colors.primary }]}>
-              {hasCheckedIn ? "Check-in Complete ✓" : "Log Today's Check-in"}
-            </Text>
-            <Text style={[styles.checkinSub, { color: colors.mutedForeground }]}>
-              {hasCheckedIn
-                ? `Energy: ${ENERGY_LABELS[(dashboard.recentCheckin?.energyLevel ?? 3) - 1]}`
-                : "Energy · Sleep · Recovery — 30 seconds"}
-            </Text>
-          </View>
-          <Ionicons name={hasCheckedIn ? "eye-outline" : "chevron-forward"} size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
+        <PulseGlow active={!hasCheckedIn} color={hasCheckedIn ? colors.green : colors.primary} style={{ borderRadius: 16 }}>
+          <TouchableOpacity
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setCheckinVisible(true); }}
+            style={[styles.checkinBanner, {
+              backgroundColor: hasCheckedIn ? colors.green + "12" : colors.primary + "12",
+              borderColor: "transparent",
+            }]}
+          >
+            <View style={[styles.checkinIcon, { backgroundColor: hasCheckedIn ? colors.green + "20" : colors.primary + "20" }]}>
+              <Ionicons name={hasCheckedIn ? "checkmark-circle" : "pulse-outline"} size={20} color={hasCheckedIn ? colors.green : colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.checkinTitle, { color: hasCheckedIn ? colors.green : colors.primary }]}>
+                {hasCheckedIn ? "Check-in Complete ✓" : "Log Today's Check-in"}
+              </Text>
+              <Text style={[styles.checkinSub, { color: colors.mutedForeground }]}>
+                {hasCheckedIn
+                  ? `Energy: ${ENERGY_LABELS[(dashboard.recentCheckin?.energyLevel ?? 3) - 1]}`
+                  : "Energy · Sleep · Recovery — 30 seconds"}
+              </Text>
+            </View>
+            <Ionicons name={hasCheckedIn ? "eye-outline" : "chevron-forward"} size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </PulseGlow>
+
+        <FitnessJournal
+          period={journalPeriod}
+          onPeriodChange={setJournalPeriod}
+          metric={journalMetric}
+          onMetricChange={setJournalMetric}
+          buckets={journalBuckets}
+          insights={journalInsights}
+          loading={journalLoading}
+        />
 
         {/* ── Transformation Summary (only if has inbody data) ── */}
         {hasInbodyData ? (
-          <View style={[styles.transformCard, { backgroundColor: colors.card, ...colors.shadow.medium }]}>
+          <Animated.View entering={entranceFade(4)} style={[styles.transformCard, { backgroundColor: colors.card, ...colors.shadow.medium }]}>
             <Text style={[styles.transformLabel, { color: colors.mutedForeground }]}>
               {(ts.weeks > 0 ? ts.weeks : 1)}-WEEK TRANSFORMATION
             </Text>
@@ -462,7 +522,7 @@ export default function ProgressScreen() {
             <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>
               {ts.scans > 0 ? `${ts.scans} InBody scan${ts.scans > 1 ? "s" : ""} recorded · Keep going!` : "Upload more scans to track transformation"}
             </Text>
-          </View>
+          </Animated.View>
         ) : (
           <EmptyCard
             icon="body-outline"
@@ -478,23 +538,26 @@ export default function ProgressScreen() {
         {/* ── Stats grid ── */}
         <View style={styles.statsGrid}>
           {[
-            { label: "Workout Streak",  value: currentStreak > 0 ? `${currentStreak}d` : "—",                    icon: "flame"  as const, color: "#F59E0B" },
-            { label: "Current BMI",     value: currentBmi ? `${currentBmi}` : "—",                               icon: "body"   as const, color: colors.purple },
-            { label: "InBody Scans",    value: dashboard.inbodyReports.length > 0 ? `${dashboard.inbodyReports.length}` : "—", icon: "scan-outline" as const, color: colors.primary },
-            { label: "Check-ins",       value: hasCheckedIn ? "Today ✓" : "—",                                    icon: "pulse-outline" as const, color: colors.green },
-          ].map((s) => (
-            <View key={s.label} style={[styles.statCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
-              <View style={[styles.statIcon, { backgroundColor: s.color + "15" }]}>
-                <Ionicons name={s.icon} size={18} color={s.color} />
-              </View>
-              <Text style={[styles.statVal, { color: colors.foreground }]}>{s.value}</Text>
-              <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{s.label}</Text>
-            </View>
+            { label: "Workout Streak", value: currentStreak > 0 ? `${currentStreak}d` : "—", icon: "flame" as const, color: "#F59E0B", pulse: currentStreak > 0 },
+            { label: "Current BMI", value: currentBmi ? `${currentBmi}` : "—", icon: "body" as const, color: colors.purple },
+            { label: "InBody Scans", value: dashboard.inbodyReports.length > 0 ? `${dashboard.inbodyReports.length}` : "—", icon: "scan-outline" as const, color: colors.primary },
+            { label: "Check-ins", value: hasCheckedIn ? "Today ✓" : "—", icon: "pulse-outline" as const, color: colors.green, pulse: !hasCheckedIn },
+          ].map((s, i) => (
+            <AnimatedStatCard
+              key={s.label}
+              label={s.label}
+              value={s.value}
+              icon={s.icon}
+              color={s.color}
+              colors={colors}
+              index={i}
+              pulse={"pulse" in s ? s.pulse : false}
+            />
           ))}
         </View>
 
         {/* ── Area chart card ── */}
-        <View style={[styles.chartCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
+        <Animated.View entering={entranceFade(6)} style={[styles.chartCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
           <View style={styles.chartTop}>
             <View>
               {latestVal != null && chartHasData ? (
@@ -502,7 +565,7 @@ export default function ProgressScreen() {
                   <Text style={[styles.chartCurrVal, { color: active.color }]}>
                     {latestVal.toFixed(chartMode === "calories" ? 0 : 1)} {active.unit}
                   </Text>
-                  {diffStr && (
+                  {diffStr && chartHasData && (
                     <View style={styles.chartDiffRow}>
                       <Ionicons
                         name={isGoodChange ? "arrow-down" : "arrow-up"}
@@ -548,6 +611,63 @@ export default function ProgressScreen() {
             ))}
           </View>
 
+          {chartMode === "weight" && (hasInbodyWeightChart || hasManualWeightChart) ? (
+            <View style={styles.weightSourceRow}>
+              {hasInbodyWeightChart ? (
+                <TouchableOpacity
+                  onPress={() => { Haptics.selectionAsync(); setWeightChartSource("inbody"); }}
+                  style={[
+                    styles.weightSourceChip,
+                    {
+                      borderColor: weightChartSource === "inbody" ? colors.purple : colors.border,
+                      backgroundColor: weightChartSource === "inbody" ? colors.purple + "18" : colors.muted,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="scan-outline"
+                    size={14}
+                    color={weightChartSource === "inbody" ? colors.purple : colors.mutedForeground}
+                  />
+                  <Text
+                    style={[
+                      styles.weightSourceText,
+                      { color: weightChartSource === "inbody" ? colors.purple : colors.mutedForeground },
+                    ]}
+                  >
+                    InBody report
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {hasManualWeightChart ? (
+                <TouchableOpacity
+                  onPress={() => { Haptics.selectionAsync(); setWeightChartSource("scale"); }}
+                  style={[
+                    styles.weightSourceChip,
+                    {
+                      borderColor: weightChartSource === "scale" ? colors.primary : colors.border,
+                      backgroundColor: weightChartSource === "scale" ? colors.primary + "18" : colors.muted,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="scale-outline"
+                    size={14}
+                    color={weightChartSource === "scale" ? colors.primary : colors.mutedForeground}
+                  />
+                  <Text
+                    style={[
+                      styles.weightSourceText,
+                      { color: weightChartSource === "scale" ? colors.primary : colors.mutedForeground },
+                    ]}
+                  >
+                    Scale log
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+
           {chartHasData ? (
             <>
               <AreaChart data={active.data} color={active.color} width={CHART_W} height={CHART_H} />
@@ -559,12 +679,20 @@ export default function ProgressScreen() {
             </>
           ) : (
             <View style={[styles.chartEmpty, { borderColor: colors.border }]}>
-              <Ionicons name="stats-chart-outline" size={32} color={colors.mutedForeground} />
+              {chartMode === "calories" ? (
+                <MetricIllustration metric="calories" color={active.color} size={100} />
+              ) : (
+                <Ionicons name="stats-chart-outline" size={32} color={colors.mutedForeground} />
+              )}
               <Text style={[styles.chartEmptyText, { color: colors.mutedForeground }]}>
                 {chartMode === "weight"
-                  ? "Log your weight to see trends here."
+                  ? weightChartSource === "inbody"
+                    ? "Upload InBody reports to see scan-based weight trends."
+                    : "Log your weight on Home or Progress to see scale trends."
                   : chartMode === "fat" || chartMode === "muscle"
                   ? "Upload InBody reports to unlock body composition charts."
+                  : chartMode === "calories" && CAL_DATA.length >= 2
+                  ? "Log meals daily to see your nutrition trend."
                   : "Nutrition tracking coming soon."}
               </Text>
               {(chartMode === "fat" || chartMode === "muscle") && (
@@ -577,10 +705,10 @@ export default function ProgressScreen() {
               )}
             </View>
           )}
-        </View>
+        </Animated.View>
 
         {/* ── AI Insights ── */}
-        <View style={[styles.aiInsightsCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
+        <Animated.View entering={entranceFade(7)} style={[styles.aiInsightsCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
           <LinearGradient
             colors={[colors.primary + "10", colors.purple + "06"]}
             style={StyleSheet.absoluteFillObject}
@@ -642,10 +770,10 @@ export default function ProgressScreen() {
               Tap "Generate" to get personalised AI analysis of your progress.
             </Text>
           )}
-        </View>
+        </Animated.View>
 
         {/* ── Achievements ── */}
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Achievements</Text>
+        <Animated.Text entering={entranceFade(8)} style={[styles.sectionTitle, { color: colors.foreground }]}>Achievements</Animated.Text>
         {hasAchievements ? (
           <View style={styles.achieveGrid}>
             {allBadges.map((badge: any) => (
@@ -812,6 +940,17 @@ const styles = StyleSheet.create({
   periodBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: "#F3F4F6" },
   periodText: { fontSize: 11, fontFamily: "Inter_500Medium" },
   modeTabs: { flexDirection: "row", gap: 6 },
+  weightSourceRow: { flexDirection: "row", gap: 8, marginTop: 4 },
+  weightSourceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  weightSourceText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   modeTab: { flex: 1, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: "#F0F0F2", alignItems: "center" },
   modeTabText: { fontSize: 11, fontFamily: "Inter_500Medium" },
   xLabels: { flexDirection: "row", justifyContent: "space-between" },

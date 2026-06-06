@@ -1,8 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as WebBrowser from "expo-web-browser";
-import { createURL } from "expo-linking";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { getApiBaseUrl } from "@/lib/api";
+import {
+  API_TOKEN_KEY,
+  API_USER_KEY,
+  completeGoogleOAuth,
+  fetchGoogleOAuthUrl,
+  getGoogleOAuthRedirectUrl,
+  parseOAuthTokensFromUrl,
+} from "@/lib/google-oauth";
 
 // Required for OAuth on iOS/Android
 WebBrowser.maybeCompleteAuthSession();
@@ -24,6 +32,7 @@ export interface User {
   bmi?: string | null;
   region?: string | null;
   memberSince: string;
+  gymName?: string | null;
 }
 
 interface AuthContextType {
@@ -39,12 +48,11 @@ interface AuthContextType {
   updateUser: (updates: Partial<User>) => Promise<void>;
   /** Fetch the latest profile from the server and update local state. */
   refreshProfile: () => Promise<void>;
+  /** Reload auth state from device storage (e.g. after web OAuth callback). */
+  reloadSession: () => Promise<void>;
   /** Local-only role swap for demo / dev purposes. */
   switchRole: (role: UserRole) => void;
 }
-
-const API_TOKEN_KEY = "@fittrack_token";
-const API_USER_KEY = "@fittrack_user";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -155,40 +163,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Google OAuth ─────────────────────────────────────────────────────────────
   const loginWithGoogle = async () => {
-    // 1. Get the Supabase Google OAuth redirect URL from our backend
-    const redirectUrl = createURL("auth/callback");
-    const { url } = await requestJson<{ url: string }>("/auth/google/url", {
-      method: "POST",
-      body: JSON.stringify({ redirectTo: redirectUrl }),
-    });
+    const redirectUrl = getGoogleOAuthRedirectUrl();
 
-    // 2. Open browser for Google sign-in
-    const result = await WebBrowser.openAuthSessionAsync(url, redirectUrl);
-
-    if (result.type !== "success") {
-      throw new Error("Google sign-in was cancelled");
+    if (Platform.OS === "android") {
+      await WebBrowser.warmUpAsync();
     }
 
-    // 3. Extract Supabase tokens from the redirect URL fragment
-    const fragment = result.url.split("#")[1] ?? "";
-    const params = new URLSearchParams(fragment);
-    const accessToken = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
-
-    if (!accessToken) {
-      throw new Error("No access token received from Google");
+    let url: string;
+    try {
+      url = await fetchGoogleOAuthUrl(redirectUrl);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Could not reach the auth server";
+      throw new Error(
+        `${message}. On a phone, ensure the backend is running and reachable at ${getApiBaseUrl()}.`,
+      );
     }
 
-    // 4. Exchange Supabase tokens for FitTrack JWT
-    const response = await requestJson<{ token: string; user: User; isNewUser: boolean }>(
-      "/auth/google/callback",
-      {
-        method: "POST",
-        body: JSON.stringify({ accessToken, refreshToken }),
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.location.href = url;
+      return;
+    }
+
+    try {
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectUrl, {
+        showInRecents: true,
+      });
+
+      if (result.type !== "success") {
+        throw new Error("Google sign-in was cancelled");
       }
-    );
 
-    await persistAuth(response.user, response.token);
+      const { accessToken, refreshToken } = parseOAuthTokensFromUrl(result.url);
+
+      if (!accessToken) {
+        throw new Error(
+          "No access token received. Add this redirect URL in Supabase: " + redirectUrl,
+        );
+      }
+
+      const response = await completeGoogleOAuth(accessToken, refreshToken);
+      await persistAuth(response.user, response.token);
+    } finally {
+      if (Platform.OS === "android") {
+        await WebBrowser.coolDownAsync();
+      }
+    }
   };
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
@@ -203,6 +222,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.multiRemove([API_TOKEN_KEY, API_USER_KEY]);
     setUser(null);
     setToken(null);
+  };
+
+  const reloadSession = async () => {
+    await loadUser();
   };
 
   // ─── Refresh profile from server ─────────────────────────────────────────────
@@ -243,6 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         updateUser,
         refreshProfile,
+        reloadSession,
         switchRole,
       }}
     >

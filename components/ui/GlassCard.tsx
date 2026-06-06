@@ -13,6 +13,8 @@ interface GlassCardProps {
   onPress?: () => void;
   elevated?: boolean;
   shadowLevel?: "soft" | "medium" | "strong";
+  /** Set false for cards that manage their own inner padding */
+  padded?: boolean;
 }
 
 function getShadow(level: "soft" | "medium" | "strong") {
@@ -38,6 +40,7 @@ export function GlassCard({
   onPress,
   elevated,
   shadowLevel = "soft",
+  padded = true,
 }: GlassCardProps) {
   const colors = useColors();
   const opacity = useSharedValue(0);
@@ -54,6 +57,7 @@ export function GlassCard({
 
   const cardStyle = [
     styles.card,
+    padded && styles.padded,
     {
       backgroundColor: colors.card,
       borderColor: colors.border,
@@ -84,5 +88,11 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
     overflow: "hidden",
+    alignSelf: "stretch",
+    width: "100%",
+    maxWidth: "100%",
+  },
+  padded: {
+    padding: 16,
   },
 });

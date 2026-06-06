@@ -18,7 +18,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "FitTrack uses the camera to capture InBody and body composition reports.",
         "NSPhotoLibraryUsageDescription": "FitTrack uses your photo library to upload existing InBody reports.",
-        "NSMotionUsageDescription": "FitTrack uses motion data to track walking, running, and activity summaries."
+        "NSMotionUsageDescription": "FitTrack uses motion data to track walking, running, and activity summaries.",
+        "UIBackgroundModes": ["fetch", "processing"]
       }
     },
     "android": {
@@ -36,7 +37,7 @@
       [
         "expo-router",
         {
-          "origin": "https://replit.com/"
+          "origin": "https://fittrack.ashirvad.work"
         }
       ],
       [
@@ -49,13 +50,15 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      "expo-background-fetch"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
+      "appUrl": "https://fittrack.ashirvad.work",
       "eas": {
         "projectId": "9f892c60-5fce-4f3e-be32-a34ac9f3c60b"
       }

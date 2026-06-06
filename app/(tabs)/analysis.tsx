@@ -1,3 +1,4 @@
+import { useBottomTabPadding } from "@/hooks/useBottomTabPadding";
 import { useColors } from "@/hooks/useColors";
 import { useProgressAPI } from "@/hooks/useProgressAPI";
 import { Ionicons } from "@expo/vector-icons";
@@ -65,11 +66,11 @@ function RadarChart({ size = 220, strength = 0.78, agility = 0.65, endurance = 0
         <Circle key={i} cx={p.x} cy={p.y} r={5} fill={colors.primary} />
       ))}
       {axes.map((a, i) => {
-        const labelPos = toXY(a.angle, r * 1.25);
+        const labelPos = toXY(a.angle, r * 1.08);
         return (
-          <SvgText key={i} x={labelPos.x} y={labelPos.y} fontSize={9}
+          <SvgText key={i} x={labelPos.x} y={labelPos.y + 3} fontSize={8}
             fontFamily="Inter_600SemiBold" fill={axisColors[i]}
-            textAnchor="middle" dominantBaseline="middle">{a.label}</SvgText>
+            textAnchor="middle">{a.label}</SvgText>
         );
       })}
     </Svg>
@@ -81,7 +82,9 @@ function RadarChart({ size = 220, strength = 0.78, agility = 0.65, endurance = 0
 export default function AnalysisScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const bottomPad = useBottomTabPadding();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const chartSize = Math.min(SCREEN_W * 0.34, 140);
   const { dashboard, aiInsights, loading, insightsLoading, fetchAIInsights } = useProgressAPI();
   const [aiLoaded, setAiLoaded] = useState(false);
 
@@ -150,7 +153,7 @@ export default function AnalysisScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingTop: topPad + 16, paddingBottom: insets.bottom + 110 }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: topPad + 16, paddingBottom: bottomPad }]}
       >
         {/* ── Header ── */}
         <View style={styles.headerRow}>
@@ -173,10 +176,10 @@ export default function AnalysisScreen() {
         {/* ── Score card with radar ── */}
         <View style={[styles.scoreCard, { backgroundColor: colors.card, ...colors.shadow.medium }]}>
           <View style={styles.scoreTop}>
-            <View>
+            <View style={styles.scoreTextCol}>
               <Text style={[styles.scoreLabel, { color: colors.mutedForeground }]}>BODY SCORE</Text>
               <Text style={[styles.scoreNum, { color: colors.foreground }]}>{bodyScore}</Text>
-              <Text style={[styles.scoreDesc, { color: colors.foreground }]}>
+              <Text style={[styles.scoreDesc, { color: colors.foreground }]} numberOfLines={3}>
                 {bodyScore >= 80 ? "Excellent body composition." :
                  bodyScore >= 65 ? "You are a healthy individual." :
                  bodyScore >= 50 ? "Good progress, keep going." : "Building a strong foundation."}
@@ -187,12 +190,14 @@ export default function AnalysisScreen() {
                 <LegendDot color={colors.cyan} label="ENDURANCE" />
               </View>
             </View>
-            <RadarChart
-              size={Math.min(SCREEN_W * 0.48, 200)}
-              strength={strengthVal}
-              agility={agilityVal}
-              endurance={enduranceVal}
-            />
+            <View style={[styles.chartWrap, { width: chartSize, height: chartSize }]}>
+              <RadarChart
+                size={chartSize}
+                strength={strengthVal}
+                agility={agilityVal}
+                endurance={enduranceVal}
+              />
+            </View>
           </View>
           <View style={[styles.improvePill, { backgroundColor: (scoreDiff >= 0 ? colors.green : colors.red) + "15" }]}>
             <Ionicons name={scoreDiff >= 0 ? "arrow-up" : "arrow-down"} size={12} color={scoreDiff >= 0 ? colors.green : colors.red} />
@@ -388,8 +393,10 @@ const styles = StyleSheet.create({
   scanBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },
   scanBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
 
-  scoreCard: { borderRadius: 20, padding: 20, gap: 14 },
-  scoreTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  scoreCard: { borderRadius: 20, padding: 20, gap: 14, overflow: "hidden" },
+  scoreTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  scoreTextCol: { flex: 1, minWidth: 0, paddingRight: 4 },
+  chartWrap: { overflow: "hidden", flexShrink: 0, alignItems: "center", justifyContent: "center" },
   scoreLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 4 },
   scoreNum: { fontSize: 56, fontFamily: "Inter_700Bold", letterSpacing: -2, lineHeight: 60 },
   scoreDesc: { fontSize: 14, fontFamily: "Inter_500Medium", marginTop: 4 },
@@ -412,8 +419,8 @@ const styles = StyleSheet.create({
   compareDivider: { width: 0.5, height: 60 },
 
   sectionTitle: { fontSize: 17, fontFamily: "Inter_700Bold", marginBottom: -4 },
-  metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  metricCard: { width: "47%", borderRadius: 16, padding: 14, gap: 6, flexGrow: 1 },
+  metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
+  metricCard: { width: "48%", borderRadius: 16, padding: 14, gap: 6 },
   metricIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   metricVal: { fontSize: 18, fontFamily: "Inter_700Bold" },
   metricLabel: { fontSize: 12, fontFamily: "Inter_400Regular" },

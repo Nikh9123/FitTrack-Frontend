@@ -1,30 +1,70 @@
+import { DailyRingsRow } from "@/components/home/DailyRingsRow";
+import { GlassCard } from "@/components/ui/GlassCard";
 import { useAuth } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
+import { useBottomTabPadding } from "@/hooks/useBottomTabPadding";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const DAYS = ["M", "T", "W", "T", "F", "S", "S"];
+function computeDailyScore(params: {
+  steps: number;
+  stepGoal: number;
+  calories: number;
+  calorieGoal: number;
+  water: number;
+  waterGoal: number;
+  caloriesBurned: number;
+  sleepHours: number;
+  sleepGoal?: number;
+}) {
+  const stepPct = Math.min(params.steps / params.stepGoal, 1);
+  const calPct = Math.min(params.calories / params.calorieGoal, 1);
+  const waterPct = Math.min(params.water / params.waterGoal, 1);
+  const burnPct = Math.min(params.caloriesBurned / 400, 1);
+  const sleepGoal = params.sleepGoal ?? 8;
+  const sleepPct = params.sleepHours > 0 ? Math.min(params.sleepHours / sleepGoal, 1) : 0;
+  return Math.round(stepPct * 25 + calPct * 20 + waterPct * 20 + burnPct * 15 + sleepPct * 20);
+}
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const bottomPad = useBottomTabPadding();
   const { user } = useAuth();
-  const { todayLog, calorieGoal, waterGoal, streak, bmi, activitySummary, weeklyCalories } = useFitness();
+  const {
+    todayLog,
+    calorieGoal,
+    waterGoal,
+    streak,
+    activitySummary,
+    refreshActivity,
+    refreshDailyData,
+    addWater,
+    logWeight,
+    syncError,
+    nutritionError,
+    isLoadingNutrition,
+  } = useFitness();
+
   const [refreshing, setRefreshing] = useState(false);
+  const [weightInput, setWeightInput] = useState("");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "U";
@@ -36,238 +76,291 @@ export default function HomeScreen() {
     return "Good Evening";
   };
 
-  const caloriesLeft = Math.max(calorieGoal - todayLog.calories, 0);
-  const maxCal = Math.max(...weeklyCalories, 2500);
+  const dailyScore = useMemo(
+    () =>
+      computeDailyScore({
+        steps: activitySummary.steps,
+        stepGoal: 10000,
+        calories: todayLog.calories,
+        calorieGoal,
+        water: todayLog.water,
+        waterGoal,
+        caloriesBurned: activitySummary.caloriesBurned,
+        sleepHours: activitySummary.sleepHours,
+      }),
+    [activitySummary, todayLog, calorieGoal, waterGoal],
+  );
+
+  const caloriesRemaining = Math.max(calorieGoal - todayLog.calories, 0);
+
+  const insight = useMemo(() => {
+    if (activitySummary.steps >= 10000) return "Step goal crushed. Keep the momentum going!";
+    if (activitySummary.steps >= 5000)
+      return `You're ${(10000 - activitySummary.steps).toLocaleString()} steps from your daily goal.`;
+    if (todayLog.water < waterGoal) return `Hydrate — ${waterGoal - todayLog.water} glasses to go.`;
+    if (activitySummary.sleepHours > 0 && activitySummary.sleepHours < 7)
+      return `You slept ${activitySummary.sleepHours}h last night — aim for 7–8h tonight.`;
+    if (caloriesRemaining > 0) return `${caloriesRemaining} kcal left in your nutrition budget.`;
+    return "Log a meal or start a workout to build your day.";
+  }, [activitySummary.steps, activitySummary.sleepHours, todayLog.water, waterGoal, caloriesRemaining]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setRefreshing(false);
+    try {
+      await Promise.all([refreshActivity(), refreshDailyData()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleLogWeight = async () => {
+    const w = parseFloat(weightInput);
+    if (!w || w <= 0) {
+      Alert.alert("Invalid weight", "Enter a valid weight in kg.");
+      return;
+    }
+    try {
+      await logWeight(w);
+      setWeightInput("");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      // error surfaced via nutritionError
+    }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingTop: topPad + 16, paddingBottom: insets.bottom + 110 }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: topPad + 16, paddingBottom: bottomPad }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
-        {/* Header */}
         <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.greeting, { color: colors.mutedForeground }]}>{greeting()},</Text>
-            <Text style={[styles.userName, { color: colors.foreground }]}>
-              {user?.name?.split(" ")[0] ?? "Champ"} 👋
+          <View style={{ flex: 1 }}>
+            <Text style={[colors.typography.caption, { color: colors.mutedForeground }]}>{greeting()},</Text>
+            <Text style={[colors.typography.h1, { color: colors.foreground, marginTop: 2 }]}>
+              {user?.name?.split(" ")[0] ?? "Athlete"}
             </Text>
           </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={[styles.notifBtn, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
-              <Ionicons name="notifications-outline" size={20} color={colors.foreground} />
-              <View style={[styles.notifDot, { backgroundColor: colors.primary }]} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => router.push("/(tabs)/profile")}
-              style={[styles.avatarCircle, { backgroundColor: colors.primary }]}
-            >
-              <Text style={styles.avatarText}>{initials}</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            onPress={() => router.push("/(tabs)/profile")}
+            style={[styles.avatarCircle, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.avatarText}>{initials}</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Steps Hero */}
-        <View style={[styles.heroCard, { backgroundColor: colors.card, ...colors.shadow.medium }]}>
-          <View style={styles.heroTop}>
-            <View>
-              <Text style={[styles.heroNum, { color: colors.foreground }]}>
-                {activitySummary.steps.toLocaleString()}
-              </Text>
-              <Text style={[styles.heroLabel, { color: colors.mutedForeground }]}>total steps</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-              style={[styles.heroIcon, { backgroundColor: colors.primary }]}
-            >
-              <Ionicons name="add" size={22} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.statsRow}>
-            <StatPill icon="flame" value={todayLog.calories.toString()} label="kcal" color={colors.primary} />
-             <StatPill icon="location" value={activitySummary.distanceKm.toFixed(1)} label="kilometer" color={colors.mutedForeground} />
-            <StatPill icon="time" value={(activitySummary.walkingMinutes + activitySummary.runningMinutes).toString()} label="minute" color={colors.cyan}/>
-          </View>
-        </View>
+        {(syncError || nutritionError) && (
+          <GlassCard style={[styles.alertCard, { borderColor: colors.error + "40" }]}>
+            <Ionicons name="warning-outline" size={18} color={colors.error} />
+            <Text style={[colors.typography.caption, { color: colors.error, flex: 1 }]}>
+              {syncError ?? nutritionError}
+            </Text>
+          </GlassCard>
+        )}
 
-        {/* Calorie Card */}
-        <View style={[styles.sectionCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
+        <LinearGradient
+          colors={[colors.primary + "35", colors.surfaceElevated]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.scoreCard, { borderColor: colors.border }]}
+        >
+          <Text style={[colors.typography.label, { color: colors.mutedForeground }]}>Daily Score</Text>
+          <View style={styles.scoreRow}>
+            <Text style={[styles.scoreNum, { color: colors.foreground }]}>{dailyScore}</Text>
+            <Text style={[colors.typography.h3, { color: colors.mutedForeground }]}>/ 100</Text>
+          </View>
+          <Text style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: 4 }]}>
+            {insight}
+          </Text>
+        </LinearGradient>
+
+        <GlassCard>
+          {isLoadingNutrition ? (
+            <ActivityIndicator color={colors.primary} style={{ paddingVertical: 24 }} />
+          ) : (
+            <DailyRingsRow
+              steps={activitySummary.steps}
+              calories={todayLog.calories}
+              calorieGoal={calorieGoal}
+              waterGlasses={todayLog.water}
+              waterGoal={waterGoal}
+            />
+          )}
+        </GlassCard>
+
+        <GlassCard>
           <View style={styles.cardHeader}>
-            <Text style={[styles.cardTitle, { color: colors.foreground }]}>Calorie</Text>
-            <TouchableOpacity>
-              <Ionicons name="settings-outline" size={18} color={colors.mutedForeground} />
+            <Text style={[colors.typography.h3, { color: colors.foreground }]}>Calories</Text>
+            <Text style={[colors.typography.caption, { color: colors.green }]}>
+              {caloriesRemaining} left
+            </Text>
+          </View>
+          <Text style={[styles.bigNum, { color: colors.foreground }]}>
+            {todayLog.calories}
+            <Text style={[colors.typography.h3, { color: colors.mutedForeground }]}> / {calorieGoal} kcal</Text>
+          </Text>
+          <Text style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: 4 }]}>
+            Burned {activitySummary.caloriesBurned} kcal from activity
+          </Text>
+        </GlassCard>
+
+        <GlassCard>
+          <View style={styles.cardHeader}>
+            <Text style={[colors.typography.h3, { color: colors.foreground }]}>Last Night's Sleep</Text>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/progress")}>
+              <Text style={[colors.typography.caption, { color: colors.primary }]}>Log check-in</Text>
             </TouchableOpacity>
           </View>
-          <Text style={[styles.bigNum, { color: colors.primary }]}>
-            {todayLog.calories} <Text style={styles.bigNumUnit}>kcal</Text>
-          </Text>
-          <Text style={[styles.subLabel, { color: colors.mutedForeground }]}>
-            Burn {caloriesLeft} calorie left.
-          </Text>
+          {activitySummary.sleepHours > 0 ? (
+            <>
+              <Text style={[styles.bigNum, { color: colors.foreground }]}>
+                {activitySummary.sleepHours}
+                <Text style={[colors.typography.h3, { color: colors.mutedForeground }]}> hours</Text>
+              </Text>
+              <Text style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: 4 }]}>
+                {activitySummary.sleepHours >= 7 ? "Good rest for recovery" : "Try for 7–8 hours tonight"}
+              </Text>
+            </>
+          ) : (
+            <Text style={[colors.typography.body, { color: colors.mutedForeground }]}>
+              Log your daily check-in on Progress to track sleep and recovery.
+            </Text>
+          )}
+        </GlassCard>
 
-          {/* Mini area chart */}
-          <View style={styles.miniChart}>
-            {weeklyCalories.map((cal, i) => {
-              const h = Math.max((cal / maxCal) * 80, 6);
-              const isActive = i === 5;
-              return (
-                <View key={i} style={styles.miniBarCol}>
-                  <View
-                    style={[
-                      styles.miniBar,
-                      {
-                        height: h,
-                        backgroundColor: isActive ? colors.primary : colors.primary + "30",
-                        borderRadius: 4,
-                      },
-                    ]}
-                  />
-                  <Text style={[styles.miniBarLabel, { color: isActive ? colors.primary : colors.mutedForeground }]}>
-                    {DAYS[i]}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-          <View style={styles.periodRow}>
-            {["1d", "1w", "1m", "All"].map((p) => (
-              <TouchableOpacity key={p} style={[styles.periodBtn, p === "1w" && { backgroundColor: colors.primary }]}>
-                <Text style={[styles.periodLabel, { color: p === "1w" ? "#fff" : colors.mutedForeground }]}>{p}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Featured Workout */}
         <TouchableOpacity
+          activeOpacity={0.9}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             router.push("/(tabs)/workout");
           }}
-          activeOpacity={0.9}
-          style={[styles.workoutHero, { ...colors.shadow.medium }]}
         >
           <LinearGradient
-            colors={["#1A1A2E", "#2D1B4E", "#1A1A2E"]}
+            colors={["#1A1035", "#121826", "#0D1219"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.workoutGrad}
+            style={[styles.workoutCard, { borderColor: colors.border }]}
           >
-            <View style={styles.workoutBadgeRow}>
-              <View style={[styles.workoutBadge, { backgroundColor: colors.primary }]}>
-                <Text style={styles.workoutBadgeText}>25 TOTAL</Text>
+            <View style={styles.workoutTop}>
+              <View style={[styles.workoutPill, { backgroundColor: colors.primary }]}>
+                <Text style={styles.workoutPillText}>TODAY</Text>
               </View>
-              <TouchableOpacity style={styles.workoutSettingsBtn}>
-                <Ionicons name="settings-outline" size={16} color="#fff" />
-              </TouchableOpacity>
+              {streak > 0 && (
+                <View style={styles.streakChip}>
+                  <Ionicons name="flame" size={14} color={colors.primary} />
+                  <Text style={[colors.typography.caption, { color: colors.foreground }]}>{streak} day streak</Text>
+                </View>
+              )}
             </View>
-            <View style={styles.workoutInfo}>
-              <Text style={styles.workoutTitle}>Back Workout</Text>
-              <Text style={styles.workoutTrainer}>With Azunyan U. Wu</Text>
-              <View style={styles.workoutStats}>
-                <WorkoutStat value="58min" label="Time" />
-                <WorkoutStat value="254kcal" label="Calorie" />
-                <WorkoutStat value="3x4" label="Sets" />
-              </View>
-              <View style={styles.workoutBtns}>
-                <TouchableOpacity style={styles.detailsBtn}>
-                  <Text style={styles.detailsBtnText}>Details</Text>
-                  <Ionicons name="document-text-outline" size={14} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                    router.push("/(tabs)/workout");
-                  }}
-                  style={[styles.startBtn, { backgroundColor: colors.primary }]}
-                >
-                  <Text style={styles.startBtnText}>Start</Text>
-                  <Ionicons name="flame" size={14} color="#fff" />
-                </TouchableOpacity>
-              </View>
+            <Text style={[colors.typography.h2, { color: "#fff", marginTop: 12 }]}>Today's Workout</Text>
+            <Text style={[colors.typography.caption, { color: "#ffffff99", marginTop: 4 }]}>
+              Tap to open your plan and start training
+            </Text>
+            <View style={[styles.startRow, { backgroundColor: colors.primary, marginTop: 16 }]}>
+              <Text style={[colors.typography.bodyMedium, { color: "#fff" }]}>Start Workout</Text>
+              <Ionicons name="arrow-forward" size={18} color="#fff" />
             </View>
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Quick Actions */}
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Quick Actions</Text>
+        <Text style={[colors.typography.h3, { color: colors.foreground, marginTop: 4 }]}>Quick Actions</Text>
         <View style={styles.quickGrid}>
           {[
-            { icon: "barbell" as const, label: "Workout", color: colors.primary, route: "/(tabs)/workout" },
-            { icon: "scan" as const, label: "InBody AI", color: colors.purple, route: "/inbody" },
-            { icon: "trending-up" as const, label: "Progress", color: colors.green, route: "/(tabs)/progress" },
-            { icon: "stats-chart" as const, label: "Analysis", color: colors.cyan, route: "/(tabs)/analysis" },
+            { icon: "restaurant" as const, label: "Log Meal", onPress: () => router.push("/(tabs)/diet") },
+            {
+              icon: "water" as const,
+              label: "+ Water",
+              onPress: () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                void addWater(1);
+              },
+            },
+            {
+              icon: "scale" as const,
+              label: "Log Weight",
+              onPress: () => {},
+            },
+            { icon: "barbell" as const, label: "Workout", onPress: () => router.push("/(tabs)/workout") },
           ].map((item) => (
             <TouchableOpacity
               key={item.label}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push(item.route as any);
+                item.onPress();
               }}
-              style={[styles.quickItem, { backgroundColor: colors.card, ...colors.shadow.soft }]}
+              style={[styles.quickItem, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
-              <View style={[styles.quickIcon, { backgroundColor: item.color + "15" }]}>
-                <Ionicons name={item.icon} size={22} color={item.color} />
+              <View style={[styles.quickIcon, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name={item.icon} size={20} color={colors.primary} />
               </View>
-              <Text style={[styles.quickLabel, { color: colors.foreground }]}>{item.label}</Text>
+              <Text style={[colors.typography.caption, { color: colors.foreground, textAlign: "center" }]}>
+                {item.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Macros strip */}
-        <View style={[styles.macrosCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
-          <Text style={[styles.cardTitle, { color: colors.foreground, marginBottom: 14 }]}>Today's Macros</Text>
-          <View style={styles.macrosRow}>
-            <MacroBar label="Protein" value={todayLog.meals.reduce((s, m) => s + m.protein, 0)} max={160} color={colors.primary} />
-            <MacroBar label="Carbs" value={todayLog.meals.reduce((s, m) => s + m.carbs, 0)} max={220} color={colors.cyan} />
-            <MacroBar label="Fat" value={todayLog.meals.reduce((s, m) => s + m.fat, 0)} max={70} color={colors.purple} />
+        <GlassCard>
+          <Text style={[colors.typography.h3, { color: colors.foreground, marginBottom: 10 }]}>Log Weight</Text>
+          <View style={styles.weightRow}>
+            <TextInput
+              value={weightInput}
+              onChangeText={setWeightInput}
+              placeholder="Weight in kg"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="decimal-pad"
+              style={[styles.weightInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]}
+            />
+            <TouchableOpacity
+              onPress={handleLogWeight}
+              style={[styles.weightBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={[colors.typography.bodyMedium, { color: "#fff" }]}>Save</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+          {todayLog.weight ? (
+            <Text style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: 8 }]}>
+              Latest: {todayLog.weight} kg
+            </Text>
+          ) : null}
+        </GlassCard>
+
+        <GlassCard>
+          <Text style={[colors.typography.h3, { color: colors.foreground, marginBottom: 12 }]}>Today's Macros</Text>
+          <MacroBar label="Protein" value={todayLog.meals.reduce((s, m) => s + m.protein, 0)} max={160} color={colors.primary} muted={colors.mutedForeground} border={colors.border} />
+          <MacroBar label="Carbs" value={todayLog.meals.reduce((s, m) => s + m.carbs, 0)} max={220} color={colors.cyan} muted={colors.mutedForeground} border={colors.border} />
+          <MacroBar label="Fat" value={todayLog.meals.reduce((s, m) => s + m.fat, 0)} max={70} color={colors.purple} muted={colors.mutedForeground} border={colors.border} />
+        </GlassCard>
       </ScrollView>
     </View>
   );
 }
 
-function StatPill({ icon, value, label, color }: { icon: any; value: string; label: string; color: string }) {
-  return (
-    <View style={styles.statPill}>
-      <View style={[styles.statPillIcon, { backgroundColor: color + "18" }]}>
-        <Ionicons name={icon} size={16} color={color} />
-      </View>
-      <Text style={[styles.statPillVal, { color: "#1C1C1E" }]}>{value}</Text>
-      <Text style={[styles.statPillLabel, { color: "#8E8E93" }]}>{label}</Text>
-    </View>
-  );
-}
-
-function WorkoutStat({ value, label }: { value: string; label: string }) {
-  return (
-    <View style={styles.wStat}>
-      <Text style={styles.wStatVal}>{value}</Text>
-      <Text style={styles.wStatLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function MacroBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+function MacroBar({
+  label,
+  value,
+  max,
+  color,
+  muted,
+  border,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: string;
+  muted: string;
+  border: string;
+}) {
   const pct = Math.min(value / max, 1);
   return (
-    <View style={styles.macroBarItem}>
-      <View style={styles.macroBarTop}>
-        <Text style={styles.macroBarLabel}>{label}</Text>
-        <Text style={[styles.macroBarVal, { color }]}>{value}g</Text>
+    <View style={{ gap: 6, marginBottom: 10 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <Text style={{ fontSize: 13, color: muted }}>{label}</Text>
+        <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color }}>{value.toFixed(1)}g</Text>
       </View>
-      <View style={styles.macroBarTrack}>
-        <View style={[styles.macroBarFill, { width: `${pct * 100}%` as any, backgroundColor: color }]} />
+      <View style={{ height: 6, backgroundColor: border, borderRadius: 3, overflow: "hidden" }}>
+        <View style={{ width: `${pct * 100}%`, height: 6, backgroundColor: color, borderRadius: 3 }} />
       </View>
     </View>
   );
@@ -276,71 +369,25 @@ function MacroBar({ label, value, max, color }: { label: string; value: number; 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { paddingHorizontal: 16, gap: 14 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  greeting: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  userName: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5, marginTop: 1 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  notifBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", position: "relative" },
-  notifDot: { width: 8, height: 8, borderRadius: 4, position: "absolute", top: 8, right: 8, borderWidth: 1.5, borderColor: "#F7F8FA" },
-  avatarCircle: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 14 },
-
-  heroCard: { backgroundColor: "#fff", borderRadius: 20, padding: 20 },
-  heroTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
-  heroNum: { fontSize: 42, fontFamily: "Inter_700Bold", letterSpacing: -1 },
-  heroLabel: { fontSize: 14, fontFamily: "Inter_400Regular", marginTop: 2 },
-  heroIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  statsRow: { flexDirection: "row", gap: 0 },
-  statPill: { flex: 1, alignItems: "center", gap: 4 },
-  statPillIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  statPillVal: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  statPillLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
-
-  sectionCard: { backgroundColor: "#fff", borderRadius: 20, padding: 18 },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  cardTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  bigNum: { fontSize: 40, fontFamily: "Inter_700Bold", letterSpacing: -1, lineHeight: 46 },
-  bigNumUnit: { fontSize: 20, fontFamily: "Inter_500Medium" },
-  subLabel: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 16, marginTop: 2 },
-  miniChart: { flexDirection: "row", alignItems: "flex-end", gap: 4, height: 90, marginBottom: 14 },
-  miniBarCol: { flex: 1, alignItems: "center", gap: 6, justifyContent: "flex-end" },
-  miniBar: { width: "100%" },
-  miniBarLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
-  periodRow: { flexDirection: "row", gap: 6 },
-  periodBtn: { flex: 1, paddingVertical: 7, borderRadius: 20, alignItems: "center", backgroundColor: "#F3F4F6" },
-  periodLabel: { fontSize: 12, fontFamily: "Inter_500Medium" },
-
-  workoutHero: { borderRadius: 20, overflow: "hidden" },
-  workoutGrad: { padding: 20 },
-  workoutBadgeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 40 },
-  workoutBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  workoutBadgeText: { color: "#fff", fontSize: 11, fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
-  workoutSettingsBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
-  workoutInfo: { gap: 8 },
-  workoutTitle: { color: "#fff", fontSize: 26, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
-  workoutTrainer: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Inter_400Regular" },
-  workoutStats: { flexDirection: "row", gap: 24, marginVertical: 6 },
-  wStat: { alignItems: "center", gap: 2 },
-  wStatVal: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
-  wStatLabel: { color: "rgba(255,255,255,0.6)", fontSize: 11, fontFamily: "Inter_400Regular" },
-  workoutBtns: { flexDirection: "row", gap: 10, marginTop: 8 },
-  detailsBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
-  detailsBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  startBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 12 },
-  startBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
-
-  sectionTitle: { fontSize: 17, fontFamily: "Inter_700Bold", marginBottom: -4 },
-  quickGrid: { flexDirection: "row", gap: 10 },
-  quickItem: { flex: 1, borderRadius: 16, padding: 14, alignItems: "center", gap: 8 },
-  quickIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  quickLabel: { fontSize: 12, fontFamily: "Inter_500Medium", textAlign: "center" },
-
-  macrosCard: { borderRadius: 20, padding: 18 },
-  macrosRow: { gap: 12 },
-  macroBarItem: { gap: 6 },
-  macroBarTop: { flexDirection: "row", justifyContent: "space-between" },
-  macroBarLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#8E8E93" },
-  macroBarVal: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  macroBarTrack: { height: 6, backgroundColor: "#F3F4F6", borderRadius: 3, overflow: "hidden" },
-  macroBarFill: { height: 6, borderRadius: 3 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 15 },
+  alertCard: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1 },
+  scoreCard: { borderRadius: 20, padding: 18, borderWidth: 1 },
+  scoreRow: { flexDirection: "row", alignItems: "flex-end", gap: 6, marginTop: 4 },
+  scoreNum: { fontSize: 48, fontFamily: "Inter_700Bold", letterSpacing: -1, lineHeight: 52 },
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  bigNum: { fontSize: 32, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  workoutCard: { borderRadius: 20, padding: 18, borderWidth: 1 },
+  workoutTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  workoutPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  workoutPillText: { color: "#fff", fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.6 },
+  streakChip: { flexDirection: "row", alignItems: "center", gap: 4 },
+  startRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: 12 },
+  quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
+  quickItem: { width: "48%", borderRadius: 16, padding: 14, alignItems: "center", gap: 8, borderWidth: 1 },
+  quickIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  weightRow: { flexDirection: "row", gap: 10 },
+  weightInput: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontFamily: "Inter_500Medium" },
+  weightBtn: { paddingHorizontal: 20, borderRadius: 12, alignItems: "center", justifyContent: "center" },
 });

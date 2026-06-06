@@ -42,147 +42,10 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MetricBig from "./components/MetricBig";
 import AnalysisSection from "./components/AnalysisSection";
-import { parseGeminiAnalysis, getRating, safeNum, formatControl } from "./helpers";
-import type { GeminiAnalysis, ExtractedMetrics, Phase, PlanType, SelectedFile } from "./types";
+import { parseGeminiAnalysis, getRating, safeNum, formatControl } from "@/lib/inbody/helpers";
+import type { GeminiAnalysis, ExtractedMetrics, Phase, PlanType, SelectedFile } from "@/lib/inbody/types";
 
-const DEMO_METRICS: ExtractedMetrics = {
-  weight: "109.6",
-  height: "180",
-  age: "22",
-  gender: "male",
-  bmi: "33.8",
-  bodyFat: "41.5",
-  bodyFatMass: "45.4",
-  skeletalMuscleMass: "36.2",
-  leanBodyMass: "64.2",
-  fatFreeMass: "64.2",
-  softLeanMass: "60.3",
-  protein: "12.6",
-  mineral: "4.67",
-  bodyWater: "46.9",
-  bmr: "1756",
-  visceralFat: "22",
-  metabolicAge: "154",
-  waistHipRatio: "1.14",
-  obesityDegree: "154",
-  recommendedCalorieIntake: "2966",
-  targetWeight: "75.5",
-  weightControl: "-34.1",
-  fatControl: "-34.1",
-  muscleControl: "0.0",
-  smi: "8.5",
-  inbodyScore: "49",
-};
 
-const DEMO_ANALYSIS: GeminiAnalysis = {
-  overallSummary: "Body composition indicates significant health concerns with 41.5% body fat and visceral fat level 22/20. Priority is structured fat loss while preserving skeletal muscle mass of 36.2 kg. Metabolic age of 154 years signals urgent need for lifestyle intervention.",
-  fitnessLevel: "Needs Attention",
-  bodyFatAnalysis: {
-    status: "Severely High",
-    description: "At 41.5% body fat, you are in the severely obese range. This significantly elevates risk for cardiovascular disease, diabetes, and metabolic syndrome.",
-    recommendation: "Combine a 600 kcal daily deficit with strength training 4x weekly and 150+ minutes of cardio per week.",
-    idealRange: "Male: 10-20% | Female: 18-28%",
-  },
-  muscleMassAnalysis: {
-    status: "Below Average",
-    description: "Skeletal muscle mass of 36.2 kg needs improvement relative to body weight of 109.6 kg. Low muscle-to-fat ratio creates an unfavourable body composition.",
-    recommendation: "Progressive resistance training with compound lifts (squats, deadlifts, rows) 4x weekly. Aim for 2g protein per kg body weight.",
-    idealRange: "Male: 33-39 kg | Female: 21-27 kg",
-  },
-  metabolismInsights: {
-    bmr: "1756",
-    metabolicAge: "154",
-    description: "BMR of 1756 kcal supports daily energy needs. Metabolic age of 154 yr is severely above actual age of 22, indicating critical metabolic dysfunction driven by excess body fat.",
-    recommendation: "Build muscle mass to increase BMR. Every kg of muscle adds ~13 kcal/day to resting metabolism.",
-  },
-  visceralFatAnalysis: {
-    level: "22",
-    risk: "Very High",
-    recommendation: "Visceral fat level 22 is critically high. Prioritise cardio (minimum 150 min/week), reduce sugar intake, and consider intermittent fasting to accelerate visceral fat reduction.",
-    whrImplication: "WHR of 1.14 indicates severe central obesity with very high cardiovascular risk. Central fat distribution is the most dangerous type and a key driver of metabolic disease.",
-  },
-  bodyCompositionAnalysis: {
-    hydrationStatus: "Within Range",
-    proteinStatus: "Adequate",
-    mineralStatus: "Within Range",
-    description: "Total body water of 46.9L, protein 12.6 kg, and mineral 4.67 kg indicate adequate hydration and nutrient stores despite excess body fat of 45.4 kg.",
-    recommendation: "Maintain hydration at 3+ litres/day. Increase dietary protein to 2g/kg to protect muscle during fat loss. Ensure adequate calcium and vitamin D for mineral density.",
-  },
-  obesityAnalysis: {
-    bmiStatus: "Obese",
-    pbfStatus: "Severely High",
-    obesityDegreeInterpretation: "Obesity degree of 154% indicates body fat exceeds ideal by 54% — severe obesity classification.",
-    riskLevel: "Very High",
-    description: "BMI of 33.8 (Obese) combined with 41.5% body fat places you at very high risk for type 2 diabetes, hypertension, sleep apnea, and cardiovascular disease.",
-    recommendation: "Target 0.5-1 kg weight loss per week through combined diet and exercise. Avoid crash diets which accelerate muscle loss.",
-  },
-  weightControlAnalysis: {
-    targetWeight: "75.5",
-    estimatedWeightToLose: "34.1",
-    estimatedFatToLose: "34.1",
-    timeline: "34-68 weeks at 0.5-1 kg/week",
-    strategy: "Structured caloric deficit of 500-750 kcal/day combined with progressive resistance training to preserve lean mass while losing fat.",
-  },
-  metabolicHealthAnalysis: {
-    description: "Metabolic profile shows severe dysfunction with BMR of 1756 kcal and metabolic age 132 years above chronological age. This indicates critical metabolic impairment driven by excess adipose tissue.",
-    bmrInterpretation: "BMR of 1756 kcal is moderate for body weight. Building muscle will increase this figure, making long-term weight maintenance significantly easier.",
-    metabolicAgeInterpretation: "Metabolic age of 154 yr vs actual age 22 suggests the body's internal systems are severely aged. Every 1 kg of fat lost and muscle gained will help reverse this rapidly.",
-    recommendation: "Combine resistance training with adequate sleep (7-8 hours) and stress management to optimise hormone levels and metabolic function.",
-  },
-  recompositionGoals: {
-    shortTerm: "4-8 weeks: Lose 4-8 kg fat, establish consistent training habit, reduce visceral fat from 22 toward 18",
-    mediumTerm: "3-6 months: Reduce body fat to below 30%, reach approximately 90 kg, improve metabolic age by 50+ years",
-    longTerm: "6-12 months: Reach target weight 75.5 kg, body fat below 20%, visceral fat below 10, metabolic age aligned with actual age",
-  },
-  strengths: [
-    "Skeletal muscle mass of 36.2 kg provides metabolic foundation",
-    "Body water 46.9L indicates adequate hydration",
-    "Protein and mineral levels within acceptable range",
-  ],
-  weaknesses: [
-    "Body fat at 41.5% — severely high classification",
-    "Visceral fat level 22 — critically dangerous cardiovascular risk",
-    "Metabolic age 154 yr — 132 years above chronological age",
-    "BMI 33.8 — obese classification",
-    "WHR 1.14 — severe central obesity",
-  ],
-  healthRisks: [
-    "Very high risk of type 2 diabetes due to critical visceral fat",
-    "High cardiovascular disease risk from central obesity and WHR 1.14",
-    "Sleep apnea risk associated with severe BMI and visceral fat",
-    "Metabolic syndrome — multiple risk factors present simultaneously",
-    "Joint stress and mobility limitations from excess body weight",
-  ],
-  recommendations: [
-    "Create 500-750 kcal daily deficit targeting 34.1 kg total fat loss",
-    "Strength train 4x weekly with progressive overload to protect and build muscle",
-    "150+ minutes moderate cardio per week (brisk walking, cycling, swimming)",
-    "Consume 196-240g protein daily (2g/kg body weight)",
-    "Reduce refined carbohydrates, sugar, and processed foods",
-    "Monitor visceral fat with monthly InBody scans",
-  ],
-  workoutPlan: {
-    goal: "Fat Loss + Muscle Preservation",
-    planType: "Recomposition",
-    weeklySchedule: [
-      { day: "Monday", focus: "Lower Body Strength", duration: "60 min", exercises: ["Squats", "Leg Press", "Romanian Deadlift", "Calf Raises"] },
-      { day: "Tuesday", focus: "Cardio — Moderate", duration: "45 min", exercises: ["Brisk Walk / Cycle", "Incline Treadmill"] },
-      { day: "Wednesday", focus: "Upper Body Push", duration: "55 min", exercises: ["Chest Press", "Shoulder Press", "Tricep Extension", "Cable Flyes"] },
-      { day: "Thursday", focus: "HIIT + Core", duration: "35 min", exercises: ["Burpees", "Mountain Climbers", "Planks", "Jump Rope"] },
-      { day: "Friday", focus: "Upper Body Pull", duration: "55 min", exercises: ["Lat Pulldown", "Cable Row", "Face Pulls", "Bicep Curls"] },
-      { day: "Saturday", focus: "Active Recovery", duration: "30 min", exercises: ["Yoga", "Light Walk", "Stretching"] },
-      { day: "Sunday", focus: "Rest", duration: "—" },
-    ],
-    cardioRecommendation: "3x weekly: 2x moderate-intensity (40-45 min brisk walk/cycle) + 1x HIIT (25-30 min). Prioritise low-impact initially to protect joints.",
-  },
-  goalSuggestions: [
-    "Reach target weight of 75.5 kg over 34-68 weeks",
-    "Reduce body fat to below 20% through structured recomposition",
-    "Lower visceral fat level to safe range (below 10)",
-    "Improve metabolic age by 130+ years through fat loss and muscle gain",
-    "Achieve BMI below 25 (Normal range)",
-  ],
-};
 
 const AI_MESSAGES = [
   "AI is scanning muscle and fat distributions...",
@@ -529,8 +392,15 @@ export default function InBodyScreen() {
               setMetrics(null);
               setGeminiAnalysis(null);
               setCurrentReportId(null);
+            } else if (phase === "preview" || phase === "analyzing") {
+              setPhase("upload");
+              setSelectedFile(null);
             } else {
-              router.back();
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/(tabs)");
+              }
             }
           }}>
             <Ionicons name="arrow-back" size={24} color={colors.foreground} />
@@ -854,14 +724,14 @@ export default function InBodyScreen() {
                       key={step.label} 
                       style={[
                         styles.premiumStepRow, 
-                        step.done && { borderColor: colors.green + "40", backgroundColor: colors.green + "05" },
-                        isCurrent && !step.done && { borderColor: colors.purple + "40", backgroundColor: colors.purple + "05" }
-                      ]}
+                        step.done ? { borderColor: colors.green + "40", backgroundColor: colors.green + "05" } : undefined,
+                        (isCurrent && !step.done) ? { borderColor: colors.purple + "40", backgroundColor: colors.purple + "05" } : undefined
+                      ] as any}
                     >
                       <View style={[
                         styles.stepStatusIndicator,
-                        step.done && { backgroundColor: colors.green + "18" },
-                        isCurrent && !step.done && { backgroundColor: colors.purple + "18" }
+                        step.done ? { backgroundColor: colors.green + "18" } : undefined,
+                        (isCurrent && !step.done) ? { backgroundColor: colors.purple + "18" } : undefined
                       ]}>
                         <Ionicons
                           name={step.done ? "checkmark" : isCurrent ? "pulse" : "ellipse-outline"}

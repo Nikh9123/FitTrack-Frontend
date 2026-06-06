@@ -41,23 +41,23 @@ function ClassicTabLayout() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
-  const tabBarHeight = isWeb ? 84 : 64;
+  const tabBarHeight = isWeb ? 84 : 72;
 
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: "#BBBBC0",
+        tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
         tabBarShowLabel: true,
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : "#FFFFFF",
+          backgroundColor: isIOS ? "transparent" : colors.card,
           borderTopWidth: 0.5,
-          borderTopColor: "#F0F0F2",
+          borderTopColor: colors.border,
           elevation: 0,
           height: tabBarHeight,
-          paddingBottom: isWeb ? 14 : 8,
+          paddingBottom: isWeb ? 14 : 10,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
@@ -140,7 +140,6 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen name="diet" options={{ href: null }} />
-      <Tabs.Screen name="gym" options={{ href: null }} />
     </Tabs>
   );
 }

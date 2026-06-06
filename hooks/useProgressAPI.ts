@@ -57,6 +57,9 @@ export interface DailyCheckin {
 
 export interface ProgressDashboard {
   weightTrend: TrendPoint[];
+  inbodyWeightTrend: TrendPoint[];
+  manualWeightTrend: TrendPoint[];
+  weightSource: "inbody" | "manual" | "both" | "none";
   currentMetrics: CurrentMetrics;
   transformationSummary: TransformSummary;
   workoutStats: { streak: number; longestStreak: number };
@@ -72,6 +75,9 @@ export interface ProgressDashboard {
 
 const EMPTY_DASHBOARD: ProgressDashboard = {
   weightTrend: [],
+  inbodyWeightTrend: [],
+  manualWeightTrend: [],
+  weightSource: "none",
   currentMetrics: { weight: null, bodyFat: null, muscle: null, bmi: null, bmr: null, visceralFat: null },
   transformationSummary: { weightLost: null, muscleGained: null, fatLost: null, scans: 0, weeks: 0 },
   workoutStats: { streak: 0, longestStreak: 0 },
@@ -116,6 +122,9 @@ export function useProgressAPI() {
 
       setDashboard({
         weightTrend: data.weightTrend ?? [],
+        inbodyWeightTrend: data.inbodyWeightTrend ?? data.weightTrend ?? [],
+        manualWeightTrend: data.manualWeightTrend ?? [],
+        weightSource: data.weightSource ?? "none",
         currentMetrics: data.currentMetrics ?? EMPTY_DASHBOARD.currentMetrics,
         transformationSummary: data.transformationSummary ?? EMPTY_DASHBOARD.transformationSummary,
         workoutStats: data.workoutStats ?? EMPTY_DASHBOARD.workoutStats,

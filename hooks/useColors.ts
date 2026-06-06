@@ -14,10 +14,7 @@ function makeShadows() {
 
 export function useColors(): ThemeTokens {
   const scheme = useColorScheme();
-  const palette =
-    scheme === "dark" && "dark" in colors
-      ? (colors as unknown as Record<string, typeof colors.light>).dark
-      : colors.light;
+  const palette = scheme === "light" ? colors.light : colors.dark;
   return {
     ...palette,
     radius: colors.radius,

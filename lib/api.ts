@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import { PRODUCTION_API_ORIGIN } from "@/lib/app-url";
 
 /**
  * Resolves the base URL for the API.
@@ -9,12 +10,12 @@ import { Platform } from "react-native";
 export function getApiBaseUrl(): string {
   // Force production API if the flag is set for local testing against prod
   if (process.env.EXPO_PUBLIC_USE_PROD_API === 'true') {
-    return "https://fittrack.ashirvad.work/api";
+    return PRODUCTION_API_ORIGIN;
   }
 
   // Use production API for production builds (e.g., via EAS)
   if (process.env.NODE_ENV !== 'development') {
-    return "https://fittrack.ashirvad.work/api";
+    return PRODUCTION_API_ORIGIN;
   }
 
   // Handle Replit environment

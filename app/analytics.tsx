@@ -40,6 +40,8 @@ export default function AnalyticsScreen() {
     connectedDevices,
     connectDevice,
     activitySummary,
+    stepTrackingStatus,
+    stepTrackingError,
   } = useFitness();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -239,6 +241,16 @@ export default function AnalyticsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
           Connected Tracking
         </Text>
+        {stepTrackingError ? (
+          <Text style={[styles.reportMeta, { color: colors.destructive, marginBottom: 8, fontFamily: "Inter_400Regular" }]}>
+            {stepTrackingError}
+          </Text>
+        ) : null}
+        {stepTrackingStatus === "active" ? (
+          <Text style={[styles.reportMeta, { color: colors.green, marginBottom: 8, fontFamily: "Inter_400Regular" }]}>
+            Live step tracking active
+          </Text>
+        ) : null}
         <GlassCard style={styles.trackingCard}>
           <View style={styles.activityGrid}>
             {[
@@ -291,7 +303,14 @@ export default function AnalyticsScreen() {
                   </View>
                   <TouchableOpacity
                     disabled={isConnected}
-                    onPress={() => connectDevice(device.id)}
+                    onPress={async () => {
+                      try {
+                        await connectDevice(device.id);
+                      } catch (e: unknown) {
+                        const message = e instanceof Error ? e.message : "Could not connect device.";
+                        Alert.alert("Connection failed", message);
+                      }
+                    }}
                     style={[
                       styles.connectButton,
                       { backgroundColor: isConnected ? colors.green + "18" : colors.primary + "18" },

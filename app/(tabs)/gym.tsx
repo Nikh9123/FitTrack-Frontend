@@ -275,7 +275,7 @@ export default function GymScreen() {
               }}
               activeOpacity={0.85}
             >
-              <GlassCard style={[styles.planCard, plan.popular && { borderColor: colors.primary }]}>
+              <GlassCard style={[styles.planCard, plan.popular ? { borderColor: colors.primary } : undefined] as any}>
                 {plan.popular && (
                   <View style={[styles.popularBadge, { backgroundColor: colors.primary }]}>
                     <Text style={[colors.typography.bodyMedium, { color: colors.primaryForeground, fontSize: 10 }]}>Popular</Text>

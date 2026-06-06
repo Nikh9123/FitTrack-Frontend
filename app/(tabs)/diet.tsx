@@ -1,14 +1,27 @@
 import { GlassCard } from "@/components/ui/GlassCard";
 import { ProgressRing } from "@/components/ui/ProgressRing";
-import { SectionHeader } from "@/components/ui/SectionHeader";
-import { useFitness } from "@/context/FitnessContext";
-import { useColors } from "@/hooks/useColors";
-import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
 import {
+  FoodListItem,
+  FoodQuantityPicker,
+  type PickedFood,
+} from "@/components/diet/FoodQuantityPicker";
+import { useAuth } from "@/context/AuthContext";
+import { useFitness } from "@/context/FitnessContext";
+import { useBottomTabPadding } from "@/hooks/useBottomTabPadding";
+import { useColors } from "@/hooks/useColors";
+import { getFoodVisual } from "@/lib/food-visuals";
+import { searchFoods, analyzeMealPhotoApi, type FoodItemDto, type MealVisionItemDto } from "@/lib/nutrition-api";
+import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -19,21 +32,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const INDIAN_FOODS = [
-  { name: "Dal Tadka (1 bowl)", calories: 170, protein: 9, carbs: 24, fat: 5 },
-  { name: "Chapati / Roti (1 pc)", calories: 70, protein: 3, carbs: 15, fat: 0.5 },
-  { name: "Basmati Rice (1 cup)", calories: 200, protein: 4, carbs: 44, fat: 0 },
-  { name: "Paneer Bhurji (100g)", calories: 265, protein: 18, carbs: 6, fat: 19 },
-  { name: "Poha (1 plate)", calories: 270, protein: 6, carbs: 47, fat: 5 },
-  { name: "Chole (1 bowl)", calories: 270, protein: 14, carbs: 38, fat: 5 },
-  { name: "Idli (2 pcs)", calories: 140, protein: 4, carbs: 28, fat: 0.5 },
-  { name: "Sambar (1 bowl)", calories: 100, protein: 5, carbs: 15, fat: 2 },
-  { name: "Chicken Curry (100g)", calories: 165, protein: 18, carbs: 4, fat: 8 },
-  { name: "Egg Bhurji (2 eggs)", calories: 220, protein: 14, carbs: 4, fat: 15 },
-  { name: "Whey Protein (1 scoop)", calories: 120, protein: 25, carbs: 4, fat: 1 },
-  { name: "Banana (1 medium)", calories: 90, protein: 1, carbs: 23, fat: 0 },
-];
 
 type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 
@@ -47,36 +45,83 @@ const MEAL_TYPES: { key: MealType; label: string; icon: keyof typeof Ionicons.gl
 export default function DietScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const bottomPad = useBottomTabPadding();
+  const { token } = useAuth();
   const { todayLog, calorieGoal, addMeal, removeMeal } = useFitness();
   const [showAdd, setShowAdd] = useState(false);
   const [selectedType, setSelectedType] = useState<MealType>("lunch");
   const [search, setSearch] = useState("");
   const [customName, setCustomName] = useState("");
   const [customCal, setCustomCal] = useState("");
+  const [foods, setFoods] = useState<FoodItemDto[]>([]);
+  const [foodsLoading, setFoodsLoading] = useState(false);
+  const [foodsError, setFoodsError] = useState<string | null>(null);
+  const [scanPhotoUri, setScanPhotoUri] = useState<string | null>(null);
+  const [scanAnalyzing, setScanAnalyzing] = useState(false);
+  const [scanResults, setScanResults] = useState<MealVisionItemDto[] | null>(null);
+  const [scanNotes, setScanNotes] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [pickedFood, setPickedFood] = useState<PickedFood | null>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  useEffect(() => {
+    if (!showAdd || !token) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setFoodsLoading(true);
+      setFoodsError(null);
+      try {
+        const items = await searchFoods(token, search);
+        if (!cancelled) setFoods(items);
+      } catch (err: any) {
+        if (!cancelled) {
+          setFoods([]);
+          setFoodsError(err.message || "Failed to load foods");
+        }
+      } finally {
+        if (!cancelled) setFoodsLoading(false);
+      }
+    }, search ? 300 : 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [showAdd, token, search]);
 
   const totalProtein = todayLog.meals.reduce((s, m) => s + m.protein, 0);
   const totalCarbs = todayLog.meals.reduce((s, m) => s + m.carbs, 0);
   const totalFat = todayLog.meals.reduce((s, m) => s + m.fat, 0);
 
-  const filteredFoods = INDIAN_FOODS.filter((f) =>
-    f.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const handleAddFood = (food: (typeof INDIAN_FOODS)[0]) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    addMeal({
-      name: food.name,
+  const handleQuantityConfirm = async (payload: {
+    servings: number;
+    quantityLabel: string;
+    name: string;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    foodItemId?: string;
+  }) => {
+    await addMeal({
+      foodItemId: payload.foodItemId,
+      name: payload.name,
       type: selectedType,
-      calories: food.calories,
-      protein: food.protein,
-      carbs: food.carbs,
-      fat: food.fat,
-      time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+      calories: payload.calories,
+      protein: payload.protein,
+      carbs: payload.carbs,
+      fat: payload.fat,
+      servings: payload.servings,
+      quantity: payload.quantityLabel,
     });
+    setPickedFood(null);
     setShowAdd(false);
     setSearch("");
+    setCustomName("");
+    setCustomCal("");
+    resetScanState();
   };
 
   const handleAddCustom = () => {
@@ -84,19 +129,93 @@ export default function DietScreen() {
       Alert.alert("Required", "Name and calories are required");
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    addMeal({
-      name: customName,
-      type: selectedType,
-      calories: parseInt(customCal),
-      protein: 0,
-      carbs: 0,
-      fat: 0,
-      time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+    setPickedFood({
+      kind: "custom",
+      name: customName.trim(),
+      caloriesKcal: parseInt(customCal, 10),
     });
+  };
+
+  const resetScanState = () => {
+    setScanPhotoUri(null);
+    setScanResults(null);
+    setScanNotes(null);
+    setScanError(null);
+    setScanAnalyzing(false);
+  };
+
+  const runMealPhotoAnalysis = async (uri: string, mimeType: string, fileName: string) => {
+    if (!token) {
+      Alert.alert("Sign in required", "Sign in to scan meals with AI.");
+      return;
+    }
+    setScanPhotoUri(uri);
+    setScanAnalyzing(true);
+    setScanError(null);
+    setScanResults(null);
+    setScanNotes(null);
+
+    try {
+      const result = await analyzeMealPhotoApi(token, uri, mimeType, fileName);
+      setScanResults(result.items);
+      setScanNotes(result.notes);
+    } catch (err: any) {
+      setScanError(err.message || "Failed to analyze meal photo");
+    } finally {
+      setScanAnalyzing(false);
+    }
+  };
+
+  const pickMealPhoto = async (source: "camera" | "library") => {
+    if (source === "camera") {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission required", "Camera access is needed to scan your meal.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.75 });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      await runMealPhotoAnalysis(asset.uri, asset.mimeType ?? "image/jpeg", asset.fileName ?? "meal.jpg");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.75 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    await runMealPhotoAnalysis(asset.uri, asset.mimeType ?? "image/jpeg", asset.fileName ?? "meal.jpg");
+  };
+
+  const handleLogAiItem = (item: MealVisionItemDto) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setPickedFood({
+      kind: "ai",
+      name: item.name,
+      caloriesKcal: item.caloriesKcal,
+      proteinG: item.proteinG,
+      carbsG: item.carbsG,
+      fatG: item.fatG,
+    });
+  };
+
+  const handleLogAllAiItems = async () => {
+    if (!scanResults?.length) return;
+    for (const item of scanResults) {
+      await addMeal({
+        name: item.name,
+        type: selectedType,
+        calories: item.caloriesKcal,
+        protein: item.proteinG,
+        carbs: item.carbsG,
+        fat: item.fatG,
+        servings: 1,
+        quantity: item.servingDescription || "1 serving",
+      });
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    resetScanState();
     setShowAdd(false);
-    setCustomName("");
-    setCustomCal("");
+    setSearch("");
   };
 
   const mealsByType = (type: MealType) => todayLog.meals.filter((m) => m.type === type);
@@ -112,24 +231,35 @@ export default function DietScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: topPad + 12, paddingBottom: insets.bottom + 100 },
+          { paddingTop: topPad + 12, paddingBottom: bottomPad },
         ]}
       >
         <View style={styles.headerRow}>
-          <Text style={[colors.typography.h1, { color: colors.foreground }]}>
+          <Text style={[colors.typography.h1, { color: colors.foreground, flexShrink: 1 }]} numberOfLines={1}>
             Diet
           </Text>
-          <TouchableOpacity
-            onPress={() => setShowAdd(true)}
-            style={[styles.addBtn, { backgroundColor: colors.secondary }]}
-          >
-            <Ionicons name="add" size={20} color={colors.primaryForeground} />
-            <Text style={[colors.typography.bodyMedium, { color: colors.primaryForeground }]}>Add Meal</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => router.push("/diet/my-plan")}
+              style={[styles.planBtn, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
+            >
+              <Ionicons name="sparkles" size={18} color={colors.primary} />
+              <Text style={[colors.typography.caption, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
+                My Plan
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowAdd(true)}
+              style={[styles.addBtn, { backgroundColor: colors.secondary }]}
+            >
+              <Ionicons name="add" size={20} color={colors.primaryForeground} />
+              <Text style={[colors.typography.bodyMedium, { color: colors.primaryForeground }]}>Add Meal</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Calorie summary */}
-        <GlassCard style={styles.summaryCard}>
+        <GlassCard style={styles.summaryCard} padded={false}>
           <View style={styles.summaryLeft}>
             <ProgressRing
               size={100}
@@ -149,7 +279,7 @@ export default function DietScreen() {
         </GlassCard>
 
         {/* Macros */}
-        <GlassCard style={styles.macroCard}>
+        <GlassCard style={styles.macroCard} padded={false}>
           {[
             { label: "Protein", value: totalProtein, color: colors.primary, max: 160 },
             { label: "Carbs", value: totalCarbs, color: colors.secondary, max: 220 },
@@ -203,15 +333,15 @@ export default function DietScreen() {
               ) : (
                 meals.map((meal) => (
                   <GlassCard key={meal.id} style={styles.mealCard}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>
+                    <View style={styles.mealCardText}>
+                      <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]} numberOfLines={2}>
                         {meal.name}
                       </Text>
-                      <Text style={[colors.typography.caption, { color: colors.mutedForeground }]}>
-                        P: {meal.protein}g · C: {meal.carbs}g · F: {meal.fat}g
+                      <Text style={[colors.typography.caption, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        {meal.quantity ? `${meal.quantity} · ` : ""}P: {meal.protein.toFixed(1)}g · C: {meal.carbs.toFixed(1)}g · F: {meal.fat.toFixed(1)}g
                       </Text>
                     </View>
-                    <Text style={[colors.typography.h3, { color: type.color }]}>
+                    <Text style={[colors.typography.h3, { color: type.color, flexShrink: 0, marginHorizontal: 6 }]}>
                       {meal.calories}
                     </Text>
                     <TouchableOpacity onPress={() => {
@@ -231,98 +361,85 @@ export default function DietScreen() {
       {/* Add meal modal */}
       <Modal visible={showAdd} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.border, borderTopLeftRadius: colors.radiusLarge, borderTopRightRadius: colors.radiusLarge }]}>
-            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            <Text style={[colors.typography.h2, { color: colors.foreground }]}>
-              Add Meal
-            </Text>
-
-            {/* Meal type selector */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
-              <View style={styles.typeRow}>
-                {MEAL_TYPES.map((t) => (
-                  <TouchableOpacity
-                    key={t.key}
-                    onPress={() => setSelectedType(t.key)}
-                    style={[
-                      styles.typeChip,
-                      {
-                        backgroundColor: selectedType === t.key ? t.color + "20" : colors.muted,
-                        borderColor: selectedType === t.key ? t.color : colors.border,
-                        borderRadius: colors.radius,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        colors.typography.bodyMedium,
-                        { color: selectedType === t.key ? t.color : colors.mutedForeground },
-                      ]}
-                    >
-                      {t.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search Indian foods..."
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.searchInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted, borderRadius: colors.radiusSmall }, colors.typography.body]}
-            />
-
-            <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
-              {filteredFoods.map((food) => (
-                <TouchableOpacity
-                  key={food.name}
-                  onPress={() => handleAddFood(food)}
-                  style={[styles.foodRow, { borderBottomColor: colors.border }]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>
-                      {food.name}
-                    </Text>
-                    <Text style={[colors.typography.tiny, { color: colors.mutedForeground }]}>
-                      P:{food.protein}g C:{food.carbs}g F:{food.fat}g
-                    </Text>
-                  </View>
-                  <Text style={[colors.typography.h3, { color: colors.secondary }]}>
-                    {food.calories} kcal
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <View style={styles.customRow}>
-              <TextInput
-                value={customName}
-                onChangeText={setCustomName}
-                placeholder="Custom food name"
-                placeholderTextColor={colors.mutedForeground}
-                style={[styles.customInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted, flex: 1, borderRadius: colors.radiusSmall }, colors.typography.body]}
+          {Platform.OS === "ios" ? (
+            <BlurView intensity={50} tint="dark" style={styles.modalBlur}>
+              <AddMealSheetContent
+                colors={colors}
+                selectedType={selectedType}
+                setSelectedType={setSelectedType}
+                pickMealPhoto={pickMealPhoto}
+                scanPhotoUri={scanPhotoUri}
+                scanAnalyzing={scanAnalyzing}
+                scanResults={scanResults}
+                scanNotes={scanNotes}
+                scanError={scanError}
+                resetScanState={resetScanState}
+                handleLogAiItem={handleLogAiItem}
+                handleLogAllAiItems={handleLogAllAiItems}
+                search={search}
+                setSearch={setSearch}
+                foodsLoading={foodsLoading}
+                foodsError={foodsError}
+                foods={foods}
+                setPickedFood={setPickedFood}
+                customName={customName}
+                setCustomName={setCustomName}
+                customCal={customCal}
+                setCustomCal={setCustomCal}
+                handleAddCustom={handleAddCustom}
+                onClose={() => {
+                  setShowAdd(false);
+                  setSearch("");
+                  setPickedFood(null);
+                  resetScanState();
+                }}
               />
-              <TextInput
-                value={customCal}
-                onChangeText={setCustomCal}
-                placeholder="kcal"
-                placeholderTextColor={colors.mutedForeground}
-                keyboardType="number-pad"
-                style={[styles.customInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted, width: 70, borderRadius: colors.radiusSmall }, colors.typography.body]}
+            </BlurView>
+          ) : (
+            <View style={[styles.modalBlur, { backgroundColor: colors.card + "F2" }]}>
+              <AddMealSheetContent
+                colors={colors}
+                selectedType={selectedType}
+                setSelectedType={setSelectedType}
+                pickMealPhoto={pickMealPhoto}
+                scanPhotoUri={scanPhotoUri}
+                scanAnalyzing={scanAnalyzing}
+                scanResults={scanResults}
+                scanNotes={scanNotes}
+                scanError={scanError}
+                resetScanState={resetScanState}
+                handleLogAiItem={handleLogAiItem}
+                handleLogAllAiItems={handleLogAllAiItems}
+                search={search}
+                setSearch={setSearch}
+                foodsLoading={foodsLoading}
+                foodsError={foodsError}
+                foods={foods}
+                setPickedFood={setPickedFood}
+                customName={customName}
+                setCustomName={setCustomName}
+                customCal={customCal}
+                setCustomCal={setCustomCal}
+                handleAddCustom={handleAddCustom}
+                onClose={() => {
+                  setShowAdd(false);
+                  setSearch("");
+                  setPickedFood(null);
+                  resetScanState();
+                }}
               />
-              <TouchableOpacity onPress={handleAddCustom} style={[styles.customAddBtn, { backgroundColor: colors.secondary }]}>
-                <Ionicons name="add" size={20} color={colors.primaryForeground} />
-              </TouchableOpacity>
             </View>
-
-            <TouchableOpacity onPress={() => { setShowAdd(false); setSearch(""); }} style={styles.cancelBtn}>
-              <Text style={[colors.typography.body, { color: colors.mutedForeground }]}>Close</Text>
-            </TouchableOpacity>
-          </View>
+          )}
         </View>
       </Modal>
+
+      <FoodQuantityPicker
+        visible={pickedFood != null}
+        picked={pickedFood}
+        mealType={selectedType}
+        onClose={() => setPickedFood(null)}
+        onConfirm={(payload) => void handleQuantityConfirm(payload)}
+      />
     </View>
   );
 }
@@ -337,12 +454,277 @@ function CalStat({ label, value, color }: { label: string; value: string; color:
   );
 }
 
+type Colors = ReturnType<typeof useColors>;
+
+function AddMealSheetContent({
+  colors,
+  selectedType,
+  setSelectedType,
+  pickMealPhoto,
+  scanPhotoUri,
+  scanAnalyzing,
+  scanResults,
+  scanNotes,
+  scanError,
+  resetScanState,
+  handleLogAiItem,
+  handleLogAllAiItems,
+  search,
+  setSearch,
+  foodsLoading,
+  foodsError,
+  foods,
+  setPickedFood,
+  customName,
+  setCustomName,
+  customCal,
+  setCustomCal,
+  handleAddCustom,
+  onClose,
+}: {
+  colors: Colors;
+  selectedType: MealType;
+  setSelectedType: (t: MealType) => void;
+  pickMealPhoto: (source: "camera" | "library") => Promise<void>;
+  scanPhotoUri: string | null;
+  scanAnalyzing: boolean;
+  scanResults: MealVisionItemDto[] | null;
+  scanNotes: string | null;
+  scanError: string | null;
+  resetScanState: () => void;
+  handleLogAiItem: (item: MealVisionItemDto) => void;
+  handleLogAllAiItems: () => void;
+  search: string;
+  setSearch: (s: string) => void;
+  foodsLoading: boolean;
+  foodsError: string | null;
+  foods: FoodItemDto[];
+  setPickedFood: (f: PickedFood) => void;
+  customName: string;
+  setCustomName: (s: string) => void;
+  customCal: string;
+  setCustomCal: (s: string) => void;
+  handleAddCustom: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <View
+      style={[
+        styles.modalSheet,
+        {
+          borderColor: colors.border + "80",
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+        },
+      ]}
+    >
+      <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+      <Text style={[colors.typography.h2, { color: colors.foreground }]}>Add Meal</Text>
+      <Text style={[colors.typography.caption, { color: colors.mutedForeground, marginTop: -6 }]}>
+        Tap a food to choose quantity
+      </Text>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+        <View style={styles.typeRow}>
+          {MEAL_TYPES.map((t) => (
+            <TouchableOpacity
+              key={t.key}
+              onPress={() => setSelectedType(t.key)}
+              style={[
+                styles.typeChip,
+                {
+                  backgroundColor: selectedType === t.key ? t.color + "25" : colors.muted + "90",
+                  borderColor: selectedType === t.key ? t.color : colors.border,
+                  borderRadius: colors.radius,
+                },
+              ]}
+            >
+              <Ionicons
+                name={t.icon}
+                size={14}
+                color={selectedType === t.key ? t.color : colors.mutedForeground}
+              />
+              <Text
+                style={[
+                  colors.typography.bodyMedium,
+                  { color: selectedType === t.key ? t.color : colors.mutedForeground, fontSize: 13 },
+                ]}
+              >
+                {t.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      <View style={styles.scanRow}>
+        <TouchableOpacity
+          onPress={() => void pickMealPhoto("camera")}
+          style={[styles.scanBtn, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
+        >
+          <Ionicons name="camera" size={18} color={colors.primary} />
+          <Text style={[colors.typography.caption, { color: colors.primary }]}>Scan Meal (AI)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => void pickMealPhoto("library")}
+          style={[styles.scanBtn, { backgroundColor: colors.muted + "90", borderColor: colors.border }]}
+        >
+          <Ionicons name="images-outline" size={18} color={colors.foreground} />
+          <Text style={[colors.typography.caption, { color: colors.foreground }]}>From Gallery</Text>
+        </TouchableOpacity>
+      </View>
+
+      {(scanPhotoUri || scanAnalyzing || scanResults || scanError) && (
+        <View style={[styles.scanPanel, { borderColor: colors.border, backgroundColor: colors.muted + "80" }]}>
+          {scanPhotoUri ? (
+            <Image source={{ uri: scanPhotoUri }} style={styles.scanPreview} resizeMode="cover" />
+          ) : null}
+
+          {scanAnalyzing ? (
+            <View style={styles.scanLoading}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={[colors.typography.caption, { color: colors.mutedForeground }]}>
+                AI is estimating calories and macros...
+              </Text>
+            </View>
+          ) : null}
+
+          {scanError ? (
+            <Text style={[colors.typography.caption, { color: colors.destructive }]}>{scanError}</Text>
+          ) : null}
+
+          {scanResults?.map((item, index) => {
+            const visual = getFoodVisual(item.name, null);
+            return (
+              <TouchableOpacity
+                key={`${item.name}-${index}`}
+                onPress={() => handleLogAiItem(item)}
+                style={[styles.aiFoodRow, { borderBottomColor: colors.border }]}
+              >
+                <LinearGradient
+                  colors={visual.gradient}
+                  style={styles.aiFoodIcon}
+                >
+                  <Text style={styles.aiFoodEmoji}>{visual.emoji}</Text>
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>{item.name}</Text>
+                  <Text style={[colors.typography.tiny, { color: colors.mutedForeground }]}>
+                    P:{item.proteinG}g · C:{item.carbsG}g · F:{item.fatG}g · {item.confidence}% sure
+                  </Text>
+                </View>
+                <Text style={[colors.typography.h3, { color: colors.secondary, marginRight: 4 }]}>
+                  {item.caloriesKcal}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            );
+          })}
+
+          {scanResults && scanResults.length > 1 ? (
+            <TouchableOpacity
+              onPress={() => void handleLogAllAiItems()}
+              style={[styles.logAllBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={[colors.typography.bodyMedium, { color: colors.primaryForeground }]}>
+                Log all {scanResults.length} items (1 serving each)
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {scanNotes ? (
+            <Text style={[colors.typography.tiny, { color: colors.mutedForeground }]}>{scanNotes}</Text>
+          ) : null}
+
+          {(scanResults || scanError) && !scanAnalyzing ? (
+            <TouchableOpacity onPress={resetScanState}>
+              <Text style={[colors.typography.caption, { color: colors.mutedForeground, textAlign: "center" }]}>
+                Clear scan
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
+
+      <View style={[styles.searchWrap, { backgroundColor: colors.muted + "90", borderColor: colors.border }]}>
+        <Ionicons name="search" size={18} color={colors.mutedForeground} />
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search Indian foods..."
+          placeholderTextColor={colors.mutedForeground}
+          style={[styles.searchInputInner, { color: colors.foreground }, colors.typography.body]}
+        />
+      </View>
+
+      <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
+        {foodsLoading ? (
+          <View style={styles.foodsLoading}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={[colors.typography.caption, { color: colors.mutedForeground }]}>Loading foods...</Text>
+          </View>
+        ) : foodsError ? (
+          <Text style={[colors.typography.caption, { color: colors.destructive, paddingVertical: 12 }]}>
+            {foodsError}
+          </Text>
+        ) : foods.length === 0 ? (
+          <Text style={[colors.typography.caption, { color: colors.mutedForeground, paddingVertical: 12 }]}>
+            {search ? "No foods match your search" : "No foods in catalog yet — run db:seed:foods on the backend"}
+          </Text>
+        ) : (
+          foods.map((food) => (
+            <FoodListItem
+              key={food.id}
+              name={food.name}
+              category={food.category}
+              calories={food.calories}
+              protein={food.protein}
+              carbs={food.carbs}
+              fat={food.fat}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setPickedFood({ kind: "catalog", food });
+              }}
+            />
+          ))
+        )}
+      </ScrollView>
+
+      <View style={[styles.customRow, { backgroundColor: colors.muted + "60", borderColor: colors.border }]}>
+        <TextInput
+          value={customName}
+          onChangeText={setCustomName}
+          placeholder="Custom food name"
+          placeholderTextColor={colors.mutedForeground}
+          style={[styles.customInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background + "80", flex: 1 }, colors.typography.body]}
+        />
+        <TextInput
+          value={customCal}
+          onChangeText={setCustomCal}
+          placeholder="kcal"
+          placeholderTextColor={colors.mutedForeground}
+          keyboardType="number-pad"
+          style={[styles.customInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background + "80", width: 72 }, colors.typography.body]}
+        />
+        <TouchableOpacity onPress={handleAddCustom} style={[styles.customAddBtn, { backgroundColor: colors.secondary }]}>
+          <Ionicons name="add" size={20} color={colors.primaryForeground} />
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
+        <Text style={[colors.typography.body, { color: colors.mutedForeground }]}>Close</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
   headerGrad: { position: "absolute", top: 0, left: 0, right: 0, height: 200 },
   scroll: { paddingHorizontal: 16, gap: 14 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
+  planBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 20 },
   summaryCard: { flexDirection: "row", padding: 16, gap: 20, alignItems: "center" },
   summaryLeft: {},
   summaryRight: { flex: 1, gap: 12 },
@@ -353,16 +735,45 @@ const styles = StyleSheet.create({
   mealTypeHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 8 },
   mealTypeIcon: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   emptyMealRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderStyle: "dashed", borderRadius: 12, padding: 12, marginBottom: 8 },
-  mealCard: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, marginBottom: 8 },
-  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "#00000060" },
-  modalSheet: { padding: 20, borderWidth: 1, gap: 12, maxHeight: "85%" },
-  modalHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center" },
+  mealCard: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  mealCardText: { flex: 1, minWidth: 0 },
+  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.55)" },
+  modalBlur: { borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden", maxHeight: "88%" },
+  modalSheet: { padding: 20, paddingBottom: 28, borderWidth: 1, gap: 12 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 4 },
   typeRow: { flexDirection: "row", gap: 8 },
-  typeChip: { paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1 },
-  searchInput: { height: 44, borderWidth: 1, paddingHorizontal: 12, fontSize: 14 },
-  foodRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5 },
-  customRow: { flexDirection: "row", gap: 8 },
-  customInput: { height: 44, borderWidth: 1, paddingHorizontal: 10, fontSize: 13 },
-  customAddBtn: { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  typeChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1 },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    height: 46,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+  },
+  searchInputInner: { flex: 1, fontSize: 14, paddingVertical: 0 },
+  foodsLoading: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 16 },
+  customRow: { flexDirection: "row", gap: 8, padding: 10, borderRadius: 16, borderWidth: 1 },
+  customInput: { height: 44, borderWidth: 1, paddingHorizontal: 10, fontSize: 13, borderRadius: 12 },
+  customAddBtn: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   cancelBtn: { alignItems: "center", padding: 8 },
+  scanRow: { flexDirection: "row", gap: 8 },
+  scanBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  scanPanel: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 10 },
+  scanPreview: { width: "100%", height: 120, borderRadius: 10 },
+  scanLoading: { flexDirection: "row", alignItems: "center", gap: 8 },
+  aiFoodRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, borderBottomWidth: 0.5, gap: 10 },
+  aiFoodIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  aiFoodEmoji: { fontSize: 18 },
+  logAllBtn: { paddingVertical: 10, borderRadius: 10, alignItems: "center" },
 });

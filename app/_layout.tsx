@@ -25,6 +25,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false, animation: "fade" }}>
       <Stack.Screen name="index" />
+      <Stack.Screen name="auth/callback" options={{ animation: "fade" }} />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen
@@ -37,6 +38,10 @@ function RootLayoutNav() {
       />
       <Stack.Screen
         name="workout/weekly-plan"
+        options={{ animation: "slide_from_right", headerShown: false }}
+      />
+      <Stack.Screen
+        name="diet/my-plan"
         options={{ animation: "slide_from_right", headerShown: false }}
       />
     </Stack>

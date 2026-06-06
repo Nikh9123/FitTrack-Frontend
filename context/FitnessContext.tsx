@@ -1,6 +1,40 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Pedometer } from "expo-sensors";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { Alert, AppState, Platform } from "react-native";
+import { useAuth } from "@/context/AuthContext";
+import { syncActivityToServer } from "@/lib/activity-sync";
+import { getTodayDateKey } from "@/lib/activity-storage";
+import { registerBackgroundStepSync } from "@/lib/background-step-sync";
+import {
+  deleteMealApi,
+  fetchDietHistory,
+  fetchDietSummary,
+  fetchNutritionGoals,
+  fetchTodayCheckin,
+  fetchWaterSummary,
+  logMealApi,
+  logWaterApi,
+  logWeightApi,
+  type DietLogDto,
+} from "@/lib/nutrition-api";
+import {
+  getStepTrackingSnapshot,
+  handleAppForeground,
+  refreshStepCount,
+  requestStepPermissions,
+  startStepTracking,
+  stopStepTracking,
+  subscribeStepUpdates,
+  type StepTrackingSnapshot,
+  type StepTrackingStatus,
+} from "@/lib/step-tracker";
 
 export interface WorkoutSet {
   reps: number;
@@ -33,6 +67,8 @@ export interface Meal {
   carbs: number;
   fat: number;
   time: string;
+  foodItemId?: string;
+  quantity?: string;
 }
 
 export interface DailyLog {
@@ -77,132 +113,54 @@ interface FitnessContextType {
   inBodyReports: InBodyReport[];
   connectedDevices: ConnectedDevice[];
   activitySummary: ActivitySummary;
+  stepTrackingStatus: StepTrackingStatus;
+  stepTrackingError: string | null;
+  syncError: string | null;
+  nutritionError: string | null;
+  isLoadingNutrition: boolean;
   calorieGoal: number;
   waterGoal: number;
   streak: number;
-  addWater: (cups: number) => Promise<void>;
+  weeklyCalories: number[];
+  addWater: (glasses?: number) => Promise<void>;
   logWeight: (weight: number) => Promise<void>;
-  addMeal: (meal: Omit<Meal, "id">) => Promise<void>;
+  addMeal: (
+    meal: Omit<Meal, "id" | "time"> & { foodItemId?: string; servings?: number },
+  ) => Promise<void>;
   removeMeal: (id: string) => Promise<void>;
   addWorkout: (workout: Omit<Workout, "id">) => Promise<void>;
   addInBodyReport: (report: Omit<InBodyReport, "id" | "uploadedAt">) => Promise<void>;
   connectDevice: (deviceId: string) => Promise<void>;
+  refreshActivity: () => Promise<void>;
+  refreshDailyData: () => Promise<void>;
   bmi: number;
-  weeklyCalories: number[];
 }
 
 const FitnessContext = createContext<FitnessContextType | undefined>(undefined);
 
-const today = new Date().toISOString().split("T")[0];
+function getToday() {
+  return getTodayDateKey();
+}
 
-const defaultLog: DailyLog = {
-  date: today,
-  calories: 1240,
-  water: 5,
-  weight: 78,
-  workouts: [],
-  meals: [
-    {
-      id: "m1",
-      name: "Poha with peanuts",
-      type: "breakfast",
-      calories: 280,
-      protein: 8,
-      carbs: 45,
-      fat: 6,
-      time: "8:30 AM",
-    },
-    {
-      id: "m2",
-      name: "Dal Rice + Sabzi",
-      type: "lunch",
-      calories: 520,
-      protein: 18,
-      carbs: 72,
-      fat: 12,
-      time: "1:00 PM",
-    },
-    {
-      id: "m3",
-      name: "Whey Protein Shake",
-      type: "snack",
-      calories: 150,
-      protein: 25,
-      carbs: 8,
-      fat: 2,
-      time: "4:00 PM",
-    },
-    {
-      id: "m4",
-      name: "Chicken Tikka + Roti",
-      type: "dinner",
-      calories: 380,
-      protein: 32,
-      carbs: 35,
-      fat: 8,
-      time: "8:00 PM",
-    },
-  ],
-  steps: 7840,
+function emptyLog(date = getToday()): DailyLog {
+  return {
+    date,
+    calories: 0,
+    water: 0,
+    workouts: [],
+    meals: [],
+    steps: 0,
+  };
+}
+
+const emptyActivitySummary: ActivitySummary = {
+  steps: 0,
+  walkingMinutes: 0,
+  runningMinutes: 0,
+  sleepHours: 0,
+  caloriesBurned: 0,
+  distanceKm: 0,
 };
-
-const sampleWorkouts: Workout[] = [
-  {
-    id: "w1",
-    name: "Push Day — Chest & Triceps",
-    date: new Date(Date.now() - 86400000).toISOString().split("T")[0],
-    duration: 52,
-    calories: 380,
-    exercises: [
-      {
-        id: "e1",
-        name: "Bench Press",
-        category: "Chest",
-        sets: [
-          { reps: 10, weight: 60, done: true },
-          { reps: 8, weight: 70, done: true },
-          { reps: 6, weight: 75, done: true },
-        ],
-      },
-      {
-        id: "e2",
-        name: "Incline Dumbbell Press",
-        category: "Chest",
-        sets: [
-          { reps: 12, weight: 22, done: true },
-          { reps: 10, weight: 24, done: true },
-        ],
-      },
-    ],
-  },
-  {
-    id: "w2",
-    name: "Pull Day — Back & Biceps",
-    date: new Date(Date.now() - 2 * 86400000).toISOString().split("T")[0],
-    duration: 60,
-    calories: 420,
-    exercises: [
-      {
-        id: "e3",
-        name: "Pull-ups",
-        category: "Back",
-        sets: [
-          { reps: 10, weight: 0, done: true },
-          { reps: 8, weight: 0, done: true },
-          { reps: 7, weight: 0, done: true },
-        ],
-      },
-    ],
-  },
-  {
-    id: "w3",
-    name: "Leg Day — Quads & Glutes",
-    date: new Date(Date.now() - 3 * 86400000).toISOString().split("T")[0],
-    duration: 65,
-    calories: 510,
-    exercises: [],
-  },
-];
 
 const defaultDevices: ConnectedDevice[] = [
   {
@@ -212,210 +170,351 @@ const defaultDevices: ConnectedDevice[] = [
     provider: "phone_sensors",
     status: "available",
   },
-  {
-    id: "google-fit",
-    name: "Google Fit",
-    type: "fit_band",
-    provider: "google_fit",
-    status: "available",
-  },
-  {
-    id: "apple-health",
-    name: "Apple Health",
-    type: "smartwatch",
-    provider: "apple_health",
-    status: "available",
-  },
-  {
-    id: "fitbit",
-    name: "Fitbit",
-    type: "fit_band",
-    provider: "fitbit",
-    status: "available",
-  },
 ];
 
-const defaultActivitySummary: ActivitySummary = {
-  steps: defaultLog.steps,
-  walkingMinutes: 46,
-  runningMinutes: 18,
-  sleepHours: 7.2,
-  caloriesBurned: 540,
-  distanceKm: 5.8,
-};
+function dietLogToMeal(log: DietLogDto): Meal {
+  const logged = new Date(log.loggedAt);
+  const time = logged.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const mealTime = log.mealTime as Meal["type"];
+  return {
+    id: log.id,
+    name: log.name,
+    type: mealTime === "pre_workout" || mealTime === "post_workout" ? "snack" : mealTime,
+    calories: log.calories,
+    protein: log.protein,
+    carbs: log.carbs,
+    fat: log.fat,
+    time,
+    foodItemId: log.foodItemId,
+    quantity: log.quantity || undefined,
+  };
+}
+
+function snapshotToSummary(snapshot: StepTrackingSnapshot, sleepHours = 0): ActivitySummary {
+  return {
+    steps: snapshot.steps,
+    walkingMinutes: snapshot.walkingMinutes,
+    runningMinutes: snapshot.runningMinutes,
+    sleepHours,
+    caloriesBurned: snapshot.caloriesBurned,
+    distanceKm: snapshot.distanceKm,
+  };
+}
 
 export function FitnessProvider({ children }: { children: React.ReactNode }) {
-  const [todayLog, setTodayLog] = useState<DailyLog>(defaultLog);
-  const [recentWorkouts, setRecentWorkouts] =
-    useState<Workout[]>(sampleWorkouts);
+  const { token, isAuthenticated } = useAuth();
+  const [todayLog, setTodayLog] = useState<DailyLog>(emptyLog);
+  const [recentWorkouts, setRecentWorkouts] = useState<Workout[]>([]);
   const [inBodyReports, setInBodyReports] = useState<InBodyReport[]>([]);
-  const [connectedDevices, setConnectedDevices] =
-    useState<ConnectedDevice[]>(defaultDevices);
-  const [activitySummary, setActivitySummary] =
-    useState<ActivitySummary>(defaultActivitySummary);
+  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>(defaultDevices);
+  const [activitySummary, setActivitySummary] = useState<ActivitySummary>(emptyActivitySummary);
+  const [sleepHours, setSleepHours] = useState(0);
+  const [stepTrackingStatus, setStepTrackingStatus] = useState<StepTrackingStatus>("idle");
+  const [stepTrackingError, setStepTrackingError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [nutritionError, setNutritionError] = useState<string | null>(null);
+  const [isLoadingNutrition, setIsLoadingNutrition] = useState(false);
+  const [calorieGoal, setCalorieGoal] = useState(2200);
+  const [waterGoal, setWaterGoal] = useState(8);
+  const [streak, setStreak] = useState(0);
+  const [weeklyCalories, setWeeklyCalories] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+  const [latestWeight, setLatestWeight] = useState<number | undefined>(undefined);
 
-  useEffect(() => {
-    loadData();
+  const syncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+
+  const scheduleServerSync = useCallback((summary: ActivitySummary) => {
+    if (!tokenRef.current) return;
+    if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+    syncDebounceRef.current = setTimeout(() => {
+      syncActivityToServer(tokenRef.current!, summary, getToday())
+        .then(() => setSyncError(null))
+        .catch((err: Error) => setSyncError(err.message));
+    }, 3000);
   }, []);
 
-  const loadData = async () => {
+  const applyStepSnapshot = useCallback(
+    (snapshot: StepTrackingSnapshot) => {
+      const summary = snapshotToSummary(snapshot, sleepHours);
+      setActivitySummary(summary);
+      setTodayLog((prev) => {
+        const today = getToday();
+        if (prev.date !== today) return { ...emptyLog(today), steps: summary.steps };
+        return { ...prev, steps: summary.steps };
+      });
+      scheduleServerSync(summary);
+    },
+    [scheduleServerSync, sleepHours],
+  );
+
+  const refreshDailyData = useCallback(async () => {
+    if (!tokenRef.current) return;
+    setIsLoadingNutrition(true);
+    setNutritionError(null);
+    const today = getToday();
+
     try {
-      const stored = await AsyncStorage.getItem("@fittrack_today");
-      let hasCurrentLog = false;
-      if (stored) {
-        const parsed = JSON.parse(stored) as DailyLog;
-        if (parsed.date === today) {
-          setTodayLog(parsed);
-          hasCurrentLog = true;
-        }
-      }
+      const [diet, water, goals, history, checkin] = await Promise.all([
+        fetchDietSummary(tokenRef.current, today),
+        fetchWaterSummary(tokenRef.current, today),
+        fetchNutritionGoals(tokenRef.current),
+        fetchDietHistory(tokenRef.current, 7),
+        fetchTodayCheckin(tokenRef.current).catch(() => ({ checkin: null })),
+      ]);
+
+      setCalorieGoal(goals.dailyCalories);
+      setWaterGoal(goals.waterGoalGlasses);
+
+      const meals = diet.logs.map(dietLogToMeal);
+      setTodayLog((prev) => ({
+        ...prev,
+        date: today,
+        calories: diet.totals.calories,
+        water: water.glasses,
+        meals,
+        weight: prev.weight,
+      }));
+
+      setWeeklyCalories(history.history.map((h) => h.calories));
+
+      const sleep = checkin.checkin?.sleepHours
+        ? parseFloat(String(checkin.checkin.sleepHours))
+        : 0;
+      setSleepHours(sleep);
+      setActivitySummary((prev) => ({ ...prev, sleepHours: sleep }));
+
+      setSyncError(null);
+    } catch (err: any) {
+      setNutritionError(err.message ?? "Failed to load nutrition data");
+    } finally {
+      setIsLoadingNutrition(false);
+    }
+  }, []);
+
+  const refreshActivity = useCallback(async () => {
+    setStepTrackingError(null);
+    const snapshot = await refreshStepCount();
+    if (snapshot) {
+      applyStepSnapshot(snapshot);
+      setStepTrackingStatus("active");
+    } else {
+      const cached = await getStepTrackingSnapshot();
+      if (cached.steps > 0) applyStepSnapshot(cached);
+    }
+  }, [applyStepSnapshot]);
+
+  const loadLocalOnly = useCallback(async () => {
+    try {
       const storedReports = await AsyncStorage.getItem("@fittrack_inbody_reports");
-      if (storedReports) {
-        setInBodyReports(JSON.parse(storedReports) as InBodyReport[]);
-      }
+      if (storedReports) setInBodyReports(JSON.parse(storedReports) as InBodyReport[]);
 
       const storedDevices = await AsyncStorage.getItem("@fittrack_connected_devices");
-      if (storedDevices) {
-        const devices = JSON.parse(storedDevices) as ConnectedDevice[];
-        setConnectedDevices(devices);
-        syncActivityFromDevices(devices);
+      if (storedDevices) setConnectedDevices(JSON.parse(storedDevices) as ConnectedDevice[]);
+
+      const cached = await getStepTrackingSnapshot();
+      if (cached.date === getToday() && cached.steps > 0) {
+        applyStepSnapshot(cached);
       }
+    } catch {
+      setStepTrackingError("Failed to load saved activity data.");
+    }
+  }, [applyStepSnapshot]);
 
-      if (!hasCurrentLog) {
-        await AsyncStorage.setItem("@fittrack_today", JSON.stringify(defaultLog));
+  useEffect(() => {
+    void loadLocalOnly();
+  }, [loadLocalOnly]);
+
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      void refreshDailyData();
+    } else {
+      setTodayLog(emptyLog());
+      setWeeklyCalories([0, 0, 0, 0, 0, 0, 0]);
+      setStreak(0);
+    }
+  }, [isAuthenticated, token, refreshDailyData]);
+
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      setStepTrackingStatus("unavailable");
+      return;
+    }
+
+    const unsubscribe = subscribeStepUpdates(applyStepSnapshot);
+
+    void (async () => {
+      try {
+        const status = await startStepTracking({ requestPermission: false });
+        setStepTrackingStatus(status);
+        setStepTrackingError(null);
+        await refreshActivity();
+        await registerBackgroundStepSync();
+      } catch {
+        setStepTrackingStatus("error");
       }
-    } catch (e) {}
-  };
+    })();
 
-  const save = async (log: DailyLog) => {
-    setTodayLog(log);
-    await AsyncStorage.setItem("@fittrack_today", JSON.stringify(log));
-  };
+    const appStateSub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void handleAppForeground().then((snapshot) => {
+          if (snapshot) applyStepSnapshot(snapshot);
+        });
+        if (tokenRef.current) void refreshDailyData();
+      }
+    });
 
-  const addWater = async (cups: number) => {
-    const updated = {
-      ...todayLog,
-      water: Math.min(todayLog.water + cups, 12),
+    return () => {
+      unsubscribe();
+      appStateSub.remove();
+      if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+      void stopStepTracking();
     };
-    await save(updated);
+  }, [applyStepSnapshot, refreshActivity, refreshDailyData]);
+
+  const requireAuth = () => {
+    const message = "Sign in to sync meals, water, and weight to your account.";
+    if (Platform.OS === "web") window.alert(message);
+    else Alert.alert("Sign in required", message);
+    throw new Error(message);
   };
 
-  const addInBodyReport = async (
-    report: Omit<InBodyReport, "id" | "uploadedAt">,
+  const addWater = async (glasses = 1) => {
+    if (!tokenRef.current) {
+      requireAuth();
+      return;
+    }
+    try {
+      const { summary } = await logWaterApi(tokenRef.current, getToday(), glasses);
+      setTodayLog((prev) => ({ ...prev, water: summary.glasses }));
+      setNutritionError(null);
+    } catch (err: any) {
+      setNutritionError(err.message);
+      throw err;
+    }
+  };
+
+  const logWeight = async (weight: number) => {
+    setLatestWeight(weight);
+    setTodayLog((prev) => ({ ...prev, weight }));
+    if (!tokenRef.current) {
+      requireAuth();
+      return;
+    }
+    try {
+      await logWeightApi(tokenRef.current, weight);
+      setNutritionError(null);
+    } catch (err: any) {
+      setNutritionError(err.message);
+      throw err;
+    }
+  };
+
+  const addMeal = async (
+    meal: Omit<Meal, "id" | "time"> & { foodItemId?: string; servings?: number },
   ) => {
+    if (!tokenRef.current) {
+      requireAuth();
+      return;
+    }
+    const servings = meal.servings ?? 1;
+    try {
+      const { summary } = await logMealApi(tokenRef.current, {
+        logDate: getToday(),
+        mealTime: meal.type,
+        foodItemId: meal.foodItemId,
+        servings,
+        quantity: meal.quantity,
+        customFood: meal.foodItemId
+          ? undefined
+          : {
+              name: meal.name,
+              caloriesKcal: meal.calories / servings,
+              proteinG: meal.protein / servings,
+              carbsG: meal.carbs / servings,
+              fatG: meal.fat / servings,
+            },
+      });
+      const meals = summary.logs.map(dietLogToMeal);
+      setTodayLog((prev) => ({ ...prev, calories: summary.totals.calories, meals }));
+      setWeeklyCalories((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = summary.totals.calories;
+        return next;
+      });
+      setNutritionError(null);
+    } catch (err: any) {
+      setNutritionError(err.message);
+      throw err;
+    }
+  };
+
+  const removeMeal = async (id: string) => {
+    if (!tokenRef.current) {
+      requireAuth();
+      return;
+    }
+    try {
+      const { summary } = await deleteMealApi(tokenRef.current, id, getToday());
+      const meals = summary.logs.map(dietLogToMeal);
+      setTodayLog((prev) => ({ ...prev, calories: summary.totals.calories, meals }));
+      setNutritionError(null);
+    } catch (err: any) {
+      setNutritionError(err.message);
+      throw err;
+    }
+  };
+
+  const addWorkout = async (workout: Omit<Workout, "id">) => {
+    const newWorkout: Workout = {
+      ...workout,
+      id: Date.now().toString(),
+    };
+    setRecentWorkouts((prev) => [newWorkout, ...prev].slice(0, 20));
+  };
+
+  const addInBodyReport = async (report: Omit<InBodyReport, "id" | "uploadedAt">) => {
     const newReport: InBodyReport = {
       ...report,
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      id: Date.now().toString(),
       uploadedAt: new Date().toISOString(),
     };
     const updated = [newReport, ...inBodyReports];
     setInBodyReports(updated);
-    await AsyncStorage.setItem(
-      "@fittrack_inbody_reports",
-      JSON.stringify(updated),
-    );
+    await AsyncStorage.setItem("@fittrack_inbody_reports", JSON.stringify(updated));
   };
 
   const connectDevice = async (deviceId: string) => {
     const now = new Date().toISOString();
-    const phoneSteps = deviceId === "phone" ? await getPhoneSensorSteps() : undefined;
+
+    if (deviceId === "phone") {
+      const granted = await requestStepPermissions();
+      if (!granted) {
+        const message = "Motion permission is required to track steps from your phone.";
+        setStepTrackingError(message);
+        if (Platform.OS !== "web") Alert.alert("Permission required", message);
+        throw new Error(message);
+      }
+      const status = await startStepTracking({ requestPermission: true });
+      setStepTrackingStatus(status);
+      await refreshActivity();
+    }
+
     const updated = connectedDevices.map((device) =>
       device.id === deviceId
         ? { ...device, status: "connected" as const, lastSync: now }
         : device,
     );
     setConnectedDevices(updated);
-    await AsyncStorage.setItem(
-      "@fittrack_connected_devices",
-      JSON.stringify(updated),
-    );
-    syncActivityFromDevices(updated, phoneSteps);
+    await AsyncStorage.setItem("@fittrack_connected_devices", JSON.stringify(updated));
   };
 
-  const syncActivityFromDevices = (devices: ConnectedDevice[], phoneSteps?: number) => {
-    const connectedCount = devices.filter((d) => d.status === "connected").length;
-    const steps = phoneSteps ?? defaultLog.steps + connectedCount * 420;
-    setActivitySummary({
-      ...defaultActivitySummary,
-      steps,
-      walkingMinutes: defaultActivitySummary.walkingMinutes + connectedCount * 4,
-      runningMinutes: defaultActivitySummary.runningMinutes + connectedCount * 2,
-      sleepHours: Math.min(8.4, defaultActivitySummary.sleepHours + connectedCount * 0.2),
-      caloriesBurned: defaultActivitySummary.caloriesBurned + connectedCount * 55,
-      distanceKm: Number((defaultActivitySummary.distanceKm + connectedCount * 0.35).toFixed(1)),
-    });
-  };
-
-  const getPhoneSensorSteps = async () => {
-    try {
-      const isAvailable = await Pedometer.isAvailableAsync();
-      if (!isAvailable) {
-        return undefined;
-      }
-
-      const permission = await Pedometer.requestPermissionsAsync();
-      if (!permission.granted) {
-        return undefined;
-      }
-
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      const result = await Pedometer.getStepCountAsync(start, end);
-      return result.steps;
-    } catch {
-      return undefined;
-    }
-  };
-
-  const logWeight = async (weight: number) => {
-    await save({ ...todayLog, weight });
-  };
-
-  const addMeal = async (meal: Omit<Meal, "id">) => {
-    const newMeal: Meal = {
-      ...meal,
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-    };
-    const updated = {
-      ...todayLog,
-      calories: todayLog.calories + meal.calories,
-      meals: [...todayLog.meals, newMeal],
-    };
-    await save(updated);
-  };
-
-  const removeMeal = async (id: string) => {
-    const meal = todayLog.meals.find((m) => m.id === id);
-    const updated = {
-      ...todayLog,
-      calories: todayLog.calories - (meal?.calories ?? 0),
-      meals: todayLog.meals.filter((m) => m.id !== id),
-    };
-    await save(updated);
-  };
-
-  const addWorkout = async (workout: Omit<Workout, "id">) => {
-    const newWorkout: Workout = {
-      ...workout,
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-    };
-    setRecentWorkouts((prev) => [newWorkout, ...prev]);
-    const updated = {
-      ...todayLog,
-      calories: todayLog.calories + workout.calories,
-      workouts: [...todayLog.workouts, newWorkout],
-    };
-    await save(updated);
-  };
-
-  const totalProtein = todayLog.meals.reduce((s, m) => s + m.protein, 0);
   const bmi =
-    todayLog.weight && todayLog.weight > 0
-      ? parseFloat((todayLog.weight / (1.75 * 1.75)).toFixed(1))
-      : 25.5;
-
-  const weeklyCalories = [1820, 2100, 1650, 1900, 2200, 1240, 0];
+    latestWeight && latestWeight > 0
+      ? parseFloat((latestWeight / (1.75 * 1.75)).toFixed(1))
+      : todayLog.weight && todayLog.weight > 0
+        ? parseFloat((todayLog.weight / (1.75 * 1.75)).toFixed(1))
+        : 0;
 
   return (
     <FitnessContext.Provider
@@ -425,9 +524,14 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         inBodyReports,
         connectedDevices,
         activitySummary,
-        calorieGoal: 2200,
-        waterGoal: 8,
-        streak: 12,
+        stepTrackingStatus,
+        stepTrackingError,
+        syncError,
+        nutritionError,
+        isLoadingNutrition,
+        calorieGoal,
+        waterGoal,
+        streak,
         addWater,
         logWeight,
         addMeal,
@@ -435,6 +539,8 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         addWorkout,
         addInBodyReport,
         connectDevice,
+        refreshActivity,
+        refreshDailyData,
         bmi,
         weeklyCalories,
       }}
