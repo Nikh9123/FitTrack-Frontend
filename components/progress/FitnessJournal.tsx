@@ -1,5 +1,6 @@
 import { AnimatedHistoryBar } from "@/components/progress/AnimatedHistoryBar";
 import { MetricIllustration } from "@/components/progress/MetricIllustration";
+import { InsightCard } from "@/components/ui/InsightCard";
 import { useColors } from "@/hooks/useColors";
 import type { HistoryDayBucket, HistoryInsightDto, HistoryPeriod } from "@/lib/progress-history-api";
 import { Ionicons } from "@expo/vector-icons";
@@ -189,34 +190,18 @@ export function FitnessJournal({
         {insights.length > 0 ? (
           <View style={styles.insightsBlock}>
             {insights.slice(0, 2).map((ins) => (
-              <View
+              <InsightCard
                 key={`${ins.id}-${chartAnimKey}`}
-                style={[styles.insightRow, { backgroundColor: colors.muted, borderColor: colors.border }]}
-              >
-                <Ionicons
-                  name={
-                    ins.trend === "up"
-                      ? "trending-up"
-                      : ins.trend === "down"
-                        ? "trending-down"
-                        : "information-circle-outline"
-                  }
-                  size={16}
-                  color={
-                    ins.trend === "up" ? colors.green : ins.trend === "down" ? colors.primary : colors.mutedForeground
-                  }
-                />
-                <Text style={[styles.insightText, { color: colors.foreground }]}>{ins.message}</Text>
-              </View>
+                message={ins.message}
+                trend={ins.trend}
+              />
             ))}
           </View>
         ) : (
-          <View style={[styles.tipBox, { backgroundColor: colors.cyan + "12", borderColor: colors.cyan + "30" }]}>
-            <Ionicons name="information-circle-outline" size={16} color={colors.cyan} />
-            <Text style={[styles.tipText, { color: colors.foreground }]}>
-              Keep logging meals, water, steps, and check-ins to unlock week-over-week insights.
-            </Text>
-          </View>
+          <InsightCard
+            message="Keep logging meals, water, steps, and check-ins to unlock week-over-week insights."
+            variant="tip"
+          />
         )}
       </View>
     </Animated.View>
@@ -252,22 +237,4 @@ const styles = StyleSheet.create({
   barColWrap: { flex: 1, alignItems: "center", gap: 4, minWidth: 0 },
   barLabel: { fontSize: 9, fontFamily: "Inter_500Medium" },
   insightsBlock: { gap: 8 },
-  insightRow: {
-    flexDirection: "row",
-    gap: 8,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "flex-start",
-  },
-  insightText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
-  tipBox: {
-    flexDirection: "row",
-    gap: 8,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "flex-start",
-  },
-  tipText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
 });
