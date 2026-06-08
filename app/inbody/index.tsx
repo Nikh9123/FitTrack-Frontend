@@ -1474,6 +1474,18 @@ export default function InBodyScreen() {
                     </Text>
                   </GlassCard>
                 ) : null}
+
+                <TouchableOpacity
+                  onPress={() => {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    router.push("/(tabs)/workout");
+                  }}
+                  style={[styles.trainerBtn, { backgroundColor: colors.primary, borderRadius: colors.radiusSmall, marginTop: 8 }]}
+                >
+                  <Text style={[colors.typography.bodyMedium, { color: colors.primaryForeground }]}>
+                    Build full workout plan (1,500+ exercises) →
+                  </Text>
+                </TouchableOpacity>
               </>
             )}
 

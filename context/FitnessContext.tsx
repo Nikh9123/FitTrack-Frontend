@@ -11,6 +11,7 @@ import { Alert, AppState, Platform } from "react-native";
 import { useAuth } from "@/context/AuthContext";
 import { flushSyncQueue, syncActivityToServer } from "@/lib/activity-sync";
 import { getTodayDateKey } from "@/lib/activity-storage";
+import { useDailyRefresh } from "@/lib/daily-refresh";
 import { registerBackgroundStepSync } from "@/lib/background-step-sync";
 import {
   deleteMealApi,
@@ -290,6 +291,8 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     setNutritionError(null);
     const today = getToday();
 
+    setTodayLog((prev) => (prev.date !== today ? emptyLog(today) : prev));
+
     try {
       const [diet, water, goals, history, checkin, streakData] = await Promise.all([
         fetchDietSummary(tokenRef.current, today),
@@ -305,12 +308,13 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
 
       const meals = diet.logs.map(dietLogToMeal);
       setTodayLog((prev) => ({
-        ...prev,
         date: today,
         calories: diet.totals.calories,
         water: water.glasses,
         meals,
-        weight: prev.weight,
+        workouts: prev.date === today ? prev.workouts : [],
+        steps: prev.date === today ? prev.steps : 0,
+        weight: latestWeight ?? prev.weight,
       }));
 
       setWeeklyCalories(history.history.map((h) => h.calories));
@@ -328,7 +332,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoadingNutrition(false);
     }
-  }, []);
+  }, [latestWeight]);
 
   const refreshActivity = useCallback(async () => {
     setStepTrackingError(null);
@@ -341,6 +345,16 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
       if (cached.steps > 0) applyStepSnapshot(cached);
     }
   }, [applyStepSnapshot]);
+
+  const handleDayChange = useCallback(() => {
+    setTodayLog(emptyLog());
+    setSleepHours(0);
+    setActivitySummary(emptyActivitySummary);
+    void refreshActivity();
+    if (tokenRef.current) void refreshDailyData();
+  }, [refreshActivity, refreshDailyData]);
+
+  useDailyRefresh(handleDayChange);
 
   const loadLocalOnly = useCallback(async () => {
     try {

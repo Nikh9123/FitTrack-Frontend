@@ -17,8 +17,8 @@ interface ActivityTimelineProps {
   title?: string;
   events: TimelineEvent[];
   emptyMessage?: string;
-  /** Collapse to N items with expand toggle */
   maxVisible?: number;
+  onPress?: () => void;
 }
 
 export function ActivityTimeline({
@@ -26,13 +26,14 @@ export function ActivityTimeline({
   events,
   emptyMessage = "Log meals, water, or a workout to build your timeline.",
   maxVisible,
+  onPress,
 }: ActivityTimelineProps) {
   const colors = useColors();
   const [expanded, setExpanded] = useState(false);
   const canCollapse = maxVisible != null && events.length > maxVisible;
   const visibleEvents = canCollapse && !expanded ? events.slice(0, maxVisible) : events;
 
-  return (
+  const card = (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.titleRow}>
         <Text style={[colors.typography.h3, { color: colors.foreground }]}>{title}</Text>
@@ -93,6 +94,16 @@ export function ActivityTimeline({
       )}
     </View>
   );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+        {card}
+      </TouchableOpacity>
+    );
+  }
+
+  return card;
 }
 
 const styles = StyleSheet.create({

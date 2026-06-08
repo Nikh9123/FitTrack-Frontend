@@ -17,7 +17,9 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { FitnessProvider } from "@/context/FitnessContext";
+import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { initRemindersOnLaunch } from "@/lib/reminders";
+import { StatusBar } from "expo-status-bar";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -39,6 +41,11 @@ function ReminderBootstrap() {
 }
 
 const queryClient = new QueryClient();
+
+function ThemedStatusBar() {
+  const { isDark } = useTheme();
+  return <StatusBar style={isDark ? "light" : "dark"} />;
+}
 
 function RootLayoutNav() {
   return (
@@ -70,6 +77,10 @@ function RootLayoutNav() {
         name="diet/my-plan"
         options={{ animation: "slide_from_right", headerShown: false }}
       />
+      <Stack.Screen
+        name="metrics"
+        options={{ animation: "slide_from_right", headerShown: false }}
+      />
     </Stack>
   );
 }
@@ -92,20 +103,23 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <FitnessProvider>
-              <ReminderBootstrap />
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <KeyboardProvider>
-                  <RootLayoutNav />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </FitnessProvider>
-          </AuthProvider>
-        </QueryClientProvider>
-      </ErrorBoundary>
+      <ThemeProvider>
+        <ThemedStatusBar />
+        <ErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <FitnessProvider>
+                <ReminderBootstrap />
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                  <KeyboardProvider>
+                    <RootLayoutNav />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </FitnessProvider>
+            </AuthProvider>
+          </QueryClientProvider>
+        </ErrorBoundary>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

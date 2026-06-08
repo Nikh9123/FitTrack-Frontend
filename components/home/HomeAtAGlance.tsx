@@ -2,7 +2,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface HomeAtAGlanceProps {
   calories: number;
@@ -13,6 +13,11 @@ interface HomeAtAGlanceProps {
   protein: number;
   carbs: number;
   fat: number;
+  onCaloriesPress?: () => void;
+  onSleepPress?: () => void;
+  onProteinPress?: () => void;
+  onCarbsPress?: () => void;
+  onFatPress?: () => void;
 }
 
 function MiniStat({
@@ -20,14 +25,16 @@ function MiniStat({
   label,
   value,
   color,
+  onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   color: string;
+  onPress?: () => void;
 }) {
   const colors = useColors();
-  return (
+  const inner = (
     <View style={[styles.stat, { backgroundColor: colors.muted, borderColor: colors.border }]}>
       <Ionicons name={icon} size={14} color={color} />
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -38,12 +45,32 @@ function MiniStat({
       </View>
     </View>
   );
+  if (onPress) {
+    return (
+      <TouchableOpacity style={{ flex: 1 }} onPress={onPress} activeOpacity={0.7}>
+        {inner}
+      </TouchableOpacity>
+    );
+  }
+  return inner;
 }
 
-function MacroPill({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+function MacroPill({
+  label,
+  value,
+  max,
+  color,
+  onPress,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: string;
+  onPress?: () => void;
+}) {
   const colors = useColors();
   const pct = Math.min(value / max, 1);
-  return (
+  const inner = (
     <View style={styles.macroPill}>
       <View style={styles.macroTop}>
         <Text style={[colors.typography.tiny, { color: colors.mutedForeground }]}>{label}</Text>
@@ -54,6 +81,14 @@ function MacroPill({ label, value, max, color }: { label: string; value: number;
       </View>
     </View>
   );
+  if (onPress) {
+    return (
+      <TouchableOpacity style={{ flex: 1 }} onPress={onPress} activeOpacity={0.7}>
+        {inner}
+      </TouchableOpacity>
+    );
+  }
+  return inner;
 }
 
 /** Compact summary — replaces separate Calories, Sleep, and Macros cards */
@@ -66,6 +101,11 @@ export function HomeAtAGlance({
   protein,
   carbs,
   fat,
+  onCaloriesPress,
+  onSleepPress,
+  onProteinPress,
+  onCarbsPress,
+  onFatPress,
 }: HomeAtAGlanceProps) {
   const colors = useColors();
 
@@ -79,12 +119,14 @@ export function HomeAtAGlance({
           label="Calories"
           value={`${calories} / ${calorieGoal}`}
           color={colors.green}
+          onPress={onCaloriesPress}
         />
         <MiniStat
           icon="moon"
           label="Sleep"
           value={sleepHours > 0 ? `${sleepHours}h` : "Not logged"}
           color={colors.purple}
+          onPress={onSleepPress}
         />
       </View>
 
@@ -98,9 +140,9 @@ export function HomeAtAGlance({
       </View>
 
       <View style={styles.macroRow}>
-        <MacroPill label="Protein" value={protein} max={160} color={colors.primary} />
-        <MacroPill label="Carbs" value={carbs} max={220} color={colors.cyan} />
-        <MacroPill label="Fat" value={fat} max={70} color={colors.purple} />
+        <MacroPill label="Protein" value={protein} max={160} color={colors.primary} onPress={onProteinPress} />
+        <MacroPill label="Carbs" value={carbs} max={220} color={colors.cyan} onPress={onCarbsPress} />
+        <MacroPill label="Fat" value={fat} max={70} color={colors.purple} onPress={onFatPress} />
       </View>
     </GlassCard>
   );

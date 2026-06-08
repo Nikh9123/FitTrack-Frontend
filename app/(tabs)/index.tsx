@@ -20,10 +20,12 @@ import { useFitness } from "@/context/FitnessContext";
 import { useBottomTabPadding } from "@/hooks/useBottomTabPadding";
 import { useHomeData } from "@/hooks/useHomeData";
 import { useColors } from "@/hooks/useColors";
-import { hapticMedium, hapticSuccess } from "@/lib/haptics";
+import { hapticLight, hapticMedium, hapticSuccess } from "@/lib/haptics";
+import { computeDailyScore } from "@/lib/metrics/score";
+import { METRIC_ROUTES } from "@/lib/metrics/routes";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -40,26 +42,6 @@ import {
 } from "react-native";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-function computeDailyScore(params: {
-  steps: number;
-  stepGoal: number;
-  calories: number;
-  calorieGoal: number;
-  water: number;
-  waterGoal: number;
-  caloriesBurned: number;
-  sleepHours: number;
-  sleepGoal?: number;
-}) {
-  const stepPct = Math.min(params.steps / params.stepGoal, 1);
-  const calPct = Math.min(params.calories / params.calorieGoal, 1);
-  const waterPct = Math.min(params.water / params.waterGoal, 1);
-  const burnPct = Math.min(params.caloriesBurned / 400, 1);
-  const sleepGoal = params.sleepGoal ?? 8;
-  const sleepPct = params.sleepHours > 0 ? Math.min(params.sleepHours / sleepGoal, 1) : 0;
-  return Math.round(stepPct * 25 + calPct * 20 + waterPct * 20 + burnPct * 15 + sleepPct * 20);
-}
 
 function AnimatedSection({ index, children }: { index: number; children: React.ReactNode }) {
   return <Animated.View entering={entranceFade(index)}>{children}</Animated.View>;
@@ -170,6 +152,14 @@ export default function HomeScreen() {
     }
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      void refreshActivity();
+      void refreshDailyData();
+      void refreshHome();
+    }, [refreshActivity, refreshDailyData, refreshHome]),
+  );
+
   const handleLogWeight = async () => {
     const w = parseFloat(weightInput);
     if (!w || w <= 0) {
@@ -200,7 +190,12 @@ export default function HomeScreen() {
 
   const openWorkout = () => {
     hapticMedium();
-    router.push("/(tabs)/workout");
+    router.push({ pathname: METRIC_ROUTES.workout, params: { action: "today" } });
+  };
+
+  const goMetric = (path: string) => {
+    void hapticLight();
+    router.push(path as any);
   };
 
   return (
@@ -220,7 +215,7 @@ export default function HomeScreen() {
                 {user?.name?.split(" ")[0] ?? "Athlete"}
               </Text>
             </View>
-            <StreakBadge count={streak} size="md" />
+            <StreakBadge count={streak} size="md" onPress={() => goMetric(METRIC_ROUTES.streak)} />
             <TouchableOpacity
               onPress={() => router.push("/(tabs)/trainer")}
               style={[styles.coachBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "35" }]}
@@ -254,8 +249,33 @@ export default function HomeScreen() {
           </GlassCard>
         )}
 
+        <AnimatedSection index={1}>
+          <QuickActionsRow
+            actions={[
+              { icon: "restaurant", label: "Meal", onPress: () => router.push("/(tabs)/diet") },
+              {
+                icon: "water",
+                label: "+ Water",
+                onPress: () => goMetric(METRIC_ROUTES.water),
+                accent: colors.cyan,
+              },
+              {
+                icon: "scale",
+                label: "Weight",
+                onPress: () => goMetric(METRIC_ROUTES.weight),
+                accent: colors.purple,
+              },
+              {
+                icon: "barbell",
+                label: "Train",
+                onPress: () => router.push("/(tabs)/workout"),
+              },
+            ]}
+          />
+        </AnimatedSection>
+
         {(syncError || nutritionError) && (
-          <AnimatedSection index={1}>
+          <AnimatedSection index={2}>
             <GlassCard style={[styles.alertCard, { borderColor: colors.error + "40" }]}>
               <Ionicons name="warning-outline" size={18} color={colors.error} />
               <Text style={[colors.typography.caption, { color: colors.error, flex: 1 }]}>
@@ -265,11 +285,16 @@ export default function HomeScreen() {
           </AnimatedSection>
         )}
 
-        <AnimatedSection index={2}>
-          <DailyScoreRing score={dailyScore} breakdown={scoreBreakdown} animKey={dailyScore} />
+        <AnimatedSection index={3}>
+          <DailyScoreRing
+            score={dailyScore}
+            breakdown={scoreBreakdown}
+            animKey={dailyScore}
+            onPress={() => goMetric(METRIC_ROUTES.score)}
+          />
         </AnimatedSection>
 
-        <AnimatedSection index={3}>
+        <AnimatedSection index={4}>
           <GlassCard padded={false} style={{ padding: 12 }}>
             {isLoadingNutrition ? (
               <DailyRingsSkeleton />
@@ -281,6 +306,9 @@ export default function HomeScreen() {
                 calorieGoal={calorieGoal}
                 waterGlasses={todayLog.water}
                 waterGoal={waterGoal}
+                onStepsPress={() => goMetric(METRIC_ROUTES.steps)}
+                onCaloriesPress={() => goMetric(METRIC_ROUTES.calories)}
+                onWaterPress={() => goMetric(METRIC_ROUTES.water)}
                 onStepGoalPress={() => {
                   setStepGoalInput(String(stepGoal));
                   setShowStepGoalModal(true);
@@ -290,15 +318,15 @@ export default function HomeScreen() {
           </GlassCard>
         </AnimatedSection>
 
-        <AnimatedSection index={4}>
+        <AnimatedSection index={5}>
           <InsightCard message={fitnessTip} variant="motivation" compact />
         </AnimatedSection>
 
-        <AnimatedSection index={5}>
+        <AnimatedSection index={6}>
           <TodaysWorkoutCard plan={workoutPlan} loading={homeLoading} onPress={openWorkout} />
         </AnimatedSection>
 
-        <AnimatedSection index={6}>
+        <AnimatedSection index={7}>
           <HomeAtAGlance
             calories={todayLog.calories}
             calorieGoal={calorieGoal}
@@ -308,10 +336,15 @@ export default function HomeScreen() {
             protein={protein}
             carbs={carbs}
             fat={fat}
+            onCaloriesPress={() => goMetric(METRIC_ROUTES.calories)}
+            onSleepPress={() => goMetric(METRIC_ROUTES.sleep)}
+            onProteinPress={() => goMetric(METRIC_ROUTES.nutrition("protein"))}
+            onCarbsPress={() => goMetric(METRIC_ROUTES.nutrition("carbs"))}
+            onFatPress={() => goMetric(METRIC_ROUTES.nutrition("fat"))}
           />
         </AnimatedSection>
 
-        <AnimatedSection index={7}>
+        <AnimatedSection index={8}>
           {homeLoading ? (
             <WeightSparklineSkeleton />
           ) : (
@@ -319,38 +352,13 @@ export default function HomeScreen() {
               points={weightSummary.points}
               source={weightSummary.source}
               latestKg={weightSummary.latestKg}
-              onPress={() => router.push("/(tabs)/progress")}
+              onPress={() => goMetric(METRIC_ROUTES.weight)}
             />
           )}
         </AnimatedSection>
 
-        <AnimatedSection index={8}>
-          <ActivityTimeline events={timelineEvents} maxVisible={2} />
-        </AnimatedSection>
-
         <AnimatedSection index={9}>
-          <QuickActionsRow
-            actions={[
-              { icon: "restaurant", label: "Meal", onPress: () => router.push("/(tabs)/diet") },
-              {
-                icon: "water",
-                label: "+ Water",
-                onPress: () => void addWater(1),
-                accent: colors.cyan,
-              },
-              {
-                icon: "scale",
-                label: "Weight",
-                onPress: () => setShowWeightModal(true),
-                accent: colors.purple,
-              },
-              {
-                icon: "barbell",
-                label: "Train",
-                onPress: () => router.push("/(tabs)/workout"),
-              },
-            ]}
-          />
+          <ActivityTimeline events={timelineEvents} maxVisible={2} onPress={() => goMetric(METRIC_ROUTES.activity)} />
         </AnimatedSection>
       </ScrollView>
 

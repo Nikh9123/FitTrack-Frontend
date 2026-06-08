@@ -2,7 +2,7 @@ import { ProgressRing } from "@/components/ui/ProgressRing";
 import { useColors } from "@/hooks/useColors";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 export interface ScoreBreakdownItem {
   label: string;
@@ -16,14 +16,15 @@ interface DailyScoreRingProps {
   subtitle?: string;
   breakdown?: ScoreBreakdownItem[];
   animKey?: string | number;
+  onPress?: () => void;
 }
 
-export function DailyScoreRing({ score, subtitle, breakdown, animKey }: DailyScoreRingProps) {
+export function DailyScoreRing({ score, subtitle, breakdown, animKey, onPress }: DailyScoreRingProps) {
   const colors = useColors();
-  const track = (colors as { ringTrack?: string }).ringTrack ?? colors.border;
-  const gradientEnd = (colors as { gradientEnd?: string }).gradientEnd ?? colors.surfaceElevated;
+  const track = colors.ringTrack;
+  const gradientEnd = colors.gradientEnd;
 
-  return (
+  const card = (
     <LinearGradient
       colors={[colors.primary + "35", gradientEnd]}
       start={{ x: 0, y: 0 }}
@@ -75,6 +76,16 @@ export function DailyScoreRing({ score, subtitle, breakdown, animKey }: DailySco
       ) : null}
     </LinearGradient>
   );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+        {card}
+      </TouchableOpacity>
+    );
+  }
+
+  return card;
 }
 
 const styles = StyleSheet.create({

@@ -41,8 +41,19 @@ type FitnessGoal =
   | "Athletic Performance"
   | "General Fitness";
 
-type Step = "goal" | "ai-loading" | "ai-result" | "generating" | "plan-ready";
-type WorkoutLocation = "gym" | "home";
+type Step = "goal" | "generating" | "plan-ready" | "saving";
+
+type PlanSource = "ai" | "trainer";
+
+interface UserMetricsSnapshot {
+  bodyFat: string | null;
+  bmi: string | null;
+  skeletalMuscleMass: string | null;
+  visceralFat: string | null;
+  weight: string | null;
+  targetWeight: string | null;
+  hasInBodyReport: boolean;
+}
 
 interface AIRecommendation {
   recommendedGoal: FitnessGoal;
@@ -77,6 +88,12 @@ interface PlanDay {
   estimatedCalories: number;
   estimatedDuration: string;
   exercises: ExerciseCard[];
+  sections?: Array<{
+    id: string;
+    title: string;
+    durationMinutes: number;
+    exercises: ExerciseCard[];
+  }>;
 }
 
 interface WorkoutStrategy {
@@ -106,6 +123,35 @@ const GOALS: Array<{
   { key: "General Fitness", icon: "heart-outline", color: "#EC4899", description: "Build healthy habits and overall fitness baseline" },
 ];
 
+function metricsFromExtracted(raw: Record<string, string> | null | undefined): UserMetricsSnapshot {
+  return {
+    bodyFat: raw?.bodyFat ?? null,
+    bmi: raw?.bmi ?? null,
+    skeletalMuscleMass: raw?.skeletalMuscleMass ?? null,
+    visceralFat: raw?.visceralFat ?? null,
+    weight: raw?.weight ?? null,
+    targetWeight: raw?.targetWeight ?? null,
+    hasInBodyReport: Boolean(raw && Object.keys(raw).length > 0),
+  };
+}
+
+function planDisplayTitle(goal: FitnessGoal, strategy: WorkoutStrategy): string {
+  const byGoal: Record<FitnessGoal, string> = {
+    "Fat Loss": "Fat Loss Workout Plan",
+    "Muscle Gain": "Muscle Gain Plan",
+    "Body Recomposition": "Body Recomposition Plan",
+    Strength: "Strength Training Plan",
+    "Athletic Performance": "Athletic Performance Plan",
+    "General Fitness": "General Fitness Plan",
+  };
+  const splitName = strategy.splitName?.trim() ?? "";
+  const splitLower = splitName.toLowerCase();
+  if (goal === "Fat Loss" && (splitLower.includes("push pull") || splitLower === "push pull legs")) {
+    return byGoal[goal];
+  }
+  return splitName || byGoal[goal];
+}
+
 const DIFF_COLOR: Record<string, string> = {
   Beginner: "#22C55E",
   Intermediate: "#F59E0B",
@@ -115,7 +161,7 @@ const DIFF_COLOR: Record<string, string> = {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface Props {
-  onComplete: (plan: PlanDay[], goal: FitnessGoal, strategy: WorkoutStrategy, workoutLocation: WorkoutLocation) => void;
+  onComplete: (plan: PlanDay[], goal: FitnessGoal, strategy: WorkoutStrategy) => void | Promise<void>;
   onSkip: () => void;
 }
 
@@ -126,10 +172,12 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [step, setStep] = useState<Step>("goal");
-  const [workoutLocation, setWorkoutLocation] = useState<WorkoutLocation>("gym");
+  const [planSource, setPlanSource] = useState<PlanSource>("ai");
+  const [hasTrainerAssigned, setHasTrainerAssigned] = useState(false);
+  const [trainerName, setTrainerName] = useState<string | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<FitnessGoal | null>(null);
   const [aiRecommendation, setAIRecommendation] = useState<AIRecommendation | null>(null);
-  const [noReportFound, setNoReportFound] = useState(false);
+  const [metricsConsidered, setMetricsConsidered] = useState<UserMetricsSnapshot | null>(null);
   const [generatedPlan, setGeneratedPlan] = useState<PlanDay[]>([]);
   const [strategy, setStrategy] = useState<WorkoutStrategy | null>(null);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
@@ -185,83 +233,117 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
     });
   }, [fadeAnim]);
 
-  // ── Ask AI ──────────────────────────────────────────────────────────────────
-  const handleAskAI = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    transition(() => setStep("ai-loading"));
-
-    try {
-      const data = await apiCall("/workout/onboarding/ai-recommend", "POST");
-
-      if (data.noReport) {
-        transition(() => {
-          setNoReportFound(true);
-          setStep("ai-result");
-        });
-        return;
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        const data = await apiCall("/workout/onboarding/status");
+        if (data.hasTrainerAssigned) {
+          setHasTrainerAssigned(true);
+          setTrainerName(data.trainerName ?? null);
+          setPlanSource("trainer");
+        }
+        const snapshot =
+          data.metricsConsidered ??
+          (data.hasInBodyReport && data.inBodyMetrics
+            ? metricsFromExtracted(data.inBodyMetrics as Record<string, string>)
+            : null);
+        if (snapshot?.hasInBodyReport) {
+          setMetricsConsidered(snapshot);
+        }
+      } catch {
+        /* ignore */
       }
+    })();
+  }, [token]);
 
-      if (data.success && data.recommendation) {
-        transition(() => {
-          setAIRecommendation(data.recommendation);
-          setNoReportFound(false);
-          setStep("ai-result");
-        });
-      } else {
-        throw new Error(data.error ?? "Unknown error");
-      }
-    } catch {
-      transition(() => setStep("goal"));
-      Alert.alert("AI Unavailable", "Could not reach AI service. Please select a goal manually.");
+  // ── Unified build (AI goal + structured plan in one step) ─────────────────
+  const handleBuildPlan = async () => {
+    if (planSource === "trainer") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        "Trainer-assigned plan",
+        hasTrainerAssigned
+          ? `${trainerName ?? "Your trainer"} manages your workout program. Contact them for updates.`
+          : "Ask your gym trainer to assign a program in FitTrack. You can still build an AI plan anytime.",
+      );
+      return;
     }
-  };
 
-  // ── Generate Plan ───────────────────────────────────────────────────────────
-  const handleGeneratePlan = async (goal: FitnessGoal) => {
-    setSelectedGoal(goal);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    transition(() => setStep("generating"));
+
+    let prefetchedMetrics = metricsConsidered;
+    try {
+      const status = await apiCall("/workout/onboarding/status");
+      prefetchedMetrics =
+        status.metricsConsidered ??
+        (status.hasInBodyReport && status.inBodyMetrics
+          ? metricsFromExtracted(status.inBodyMetrics as Record<string, string>)
+          : prefetchedMetrics);
+    } catch {
+      /* use cached metrics */
+    }
+
+    transition(() => {
+      if (prefetchedMetrics?.hasInBodyReport) {
+        setMetricsConsidered(prefetchedMetrics);
+      }
+      setStep("generating");
+    });
 
     try {
-      const data = await apiCall("/workout/onboarding/generate-plan", "POST", {
-        goal,
+      const data = await apiCall("/workout/onboarding/generate-unified", "POST", {
+        goal: selectedGoal,
+        useAiGoal: !selectedGoal,
         level: "beginner",
-        workoutLocation,
       });
 
+      if (data.planSource === "trainer" || data.error?.includes("trainer")) {
+        throw new Error(data.error ?? "Trainer plan active");
+      }
+
       if (data.success && data.plan) {
+        const goal = (selectedGoal ?? data.aiRecommendation?.recommendedGoal ?? data.goal) as FitnessGoal;
         transition(() => {
+          setSelectedGoal(goal);
           setGeneratedPlan(data.plan);
           setStrategy(data.strategy);
+          setMetricsConsidered(data.metricsConsidered ?? null);
+          if (data.aiRecommendation) setAIRecommendation(data.aiRecommendation);
           setStep("plan-ready");
         });
       } else {
         throw new Error(data.error ?? "Plan generation failed");
       }
-    } catch {
-      transition(() => setStep(aiRecommendation ? "ai-result" : "goal"));
-      Alert.alert("Plan generation failed", "Could not build your workout plan. Please try again.");
+    } catch (err: unknown) {
+      transition(() => setStep("goal"));
+      const msg = err instanceof Error ? err.message : "Could not build your workout plan. Please try again.";
+      Alert.alert("Plan generation failed", msg);
     }
   };
 
   // ── Save & Finish ────────────────────────────────────────────────────────────
   const handleSaveAndFinish = async () => {
-    if (!selectedGoal) return;
+    if (!selectedGoal || !strategy) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    transition(() => setStep("saving"));
 
     try {
-      await apiCall("/workout/onboarding/save", "POST", {
+      const saveRes = await apiCall("/workout/onboarding/save", "POST", {
         goal: selectedGoal,
         aiRecommendedGoal: aiRecommendation?.recommendedGoal ?? null,
         workoutPlan: generatedPlan,
         strategy,
-        workoutLocation,
       });
-    } catch {
-      // Best-effort — still proceed to dashboard
-    }
+      if (saveRes.error) {
+        throw new Error(saveRes.error);
+      }
 
-    onComplete(generatedPlan, selectedGoal, strategy!, workoutLocation);
+      await onComplete(generatedPlan, selectedGoal, strategy);
+    } catch (err: unknown) {
+      transition(() => setStep("plan-ready"));
+      const msg = err instanceof Error ? err.message : "Could not save your plan. Please try again.";
+      Alert.alert("Save failed", msg);
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -280,33 +362,13 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
             topPad={topPad}
             insets={insets}
             selectedGoal={selectedGoal}
-            workoutLocation={workoutLocation}
-            onWorkoutLocationChange={setWorkoutLocation}
+            planSource={planSource}
+            hasTrainerAssigned={hasTrainerAssigned}
+            trainerName={trainerName}
             onSelectGoal={setSelectedGoal}
-            onGeneratePlan={handleGeneratePlan}
-            onAskAI={handleAskAI}
+            onSelectPlanSource={setPlanSource}
+            onBuildPlan={handleBuildPlan}
             onSkip={onSkip}
-          />
-        )}
-
-        {step === "ai-loading" && (
-          <LoadingStep
-            colors={colors}
-            title="Analyzing Your Body Composition"
-            subtitle="AI is reviewing your InBody metrics to find the perfect starting goal…"
-          />
-        )}
-
-        {step === "ai-result" && (
-          <AIResultStep
-            colors={colors}
-            topPad={topPad}
-            insets={insets}
-            recommendation={aiRecommendation}
-            noReport={noReportFound}
-            onUseGoal={(goal: FitnessGoal) => handleGeneratePlan(goal)}
-            onChooseManually={() => transition(() => setStep("goal"))}
-            onUploadReport={() => router.push("/inbody" as any)}
           />
         )}
 
@@ -314,7 +376,18 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
           <LoadingStep
             colors={colors}
             title="Building Your Personalised Plan"
-            subtitle="AI is designing your workout strategy and fetching exercises…"
+            subtitle="AI is reviewing your metrics, designing strategy, and pulling exercises from the catalog…"
+            metrics={metricsConsidered}
+          />
+        )}
+
+        {step === "saving" && (
+          <LoadingStep
+            colors={colors}
+            title="Adding Plan to Your Profile"
+            subtitle="Saving your workout schedule and syncing exercises to your account…"
+            metrics={metricsConsidered}
+            steps={["Saving preferences", "Writing exercises", "Updating your schedule"]}
           />
         )}
 
@@ -324,15 +397,16 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
             topPad={topPad}
             insets={insets}
             goal={selectedGoal!}
-            workoutLocation={workoutLocation}
             strategy={strategy}
             plan={generatedPlan}
+            aiRecommendation={aiRecommendation}
+            metricsConsidered={metricsConsidered}
             expandedDay={expandedDay}
             expandedEx={expandedEx}
             onToggleDay={(d: string) => setExpandedDay(expandedDay === d ? null : d)}
             onToggleEx={(e: string) => setExpandedEx(expandedEx === e ? null : e)}
             onSave={handleSaveAndFinish}
-            onBack={() => transition(() => setStep(aiRecommendation ? "ai-result" : "goal"))}
+            onBack={() => transition(() => setStep("goal"))}
           />
         )}
       </Animated.View>
@@ -347,11 +421,12 @@ function GoalStep({
   topPad,
   insets,
   selectedGoal,
-  workoutLocation,
-  onWorkoutLocationChange,
+  planSource,
+  hasTrainerAssigned,
+  trainerName,
   onSelectGoal,
-  onGeneratePlan,
-  onAskAI,
+  onSelectPlanSource,
+  onBuildPlan,
   onSkip,
 }: any) {
   return (
@@ -362,110 +437,123 @@ function GoalStep({
       <View style={styles.onboardingHeader}>
         <View style={[styles.sparkBadge, { backgroundColor: colors.primary + "15" }]}>
           <Ionicons name="sparkles" size={14} color={colors.primary} />
-          <Text style={[styles.sparkText, { color: colors.primary }]}>AI Workout Coach</Text>
+          <Text style={[styles.sparkText, { color: colors.primary }]}>Workout Plan Setup</Text>
         </View>
         <Text style={[styles.onboardingTitle, { color: colors.foreground }]}>What's your{"\n"}fitness goal?</Text>
         <Text style={[styles.onboardingSubtitle, { color: colors.mutedForeground }]}>
-          Select a goal to generate your personalised workout plan, or let AI recommend based on your body data.
+          Choose AI Coach or a trainer-assigned plan. One tap builds warm-up, 13 min cardio, 40 min strength, and stretch sections.
         </Text>
       </View>
 
-      <View style={[styles.locationRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {(["gym", "home"] as WorkoutLocation[]).map((loc) => {
-          const active = workoutLocation === loc;
+      <View style={styles.sourceRow}>
+        {([
+          { key: "ai" as PlanSource, icon: "sparkles", label: "AI Coach", desc: "Uses your InBody + 2,000+ exercises" },
+          { key: "trainer" as PlanSource, icon: "person", label: "From Trainer", desc: hasTrainerAssigned ? `${trainerName ?? "Trainer"} assigned` : "Gym trainer program" },
+        ]).map((src) => {
+          const active = planSource === src.key;
           return (
             <TouchableOpacity
-              key={loc}
+              key={src.key}
               onPress={() => {
                 Haptics.selectionAsync();
-                onWorkoutLocationChange(loc);
+                onSelectPlanSource(src.key);
               }}
               style={[
-                styles.locationChip,
-                active && { backgroundColor: colors.primary },
+                styles.sourceCard,
+                {
+                  backgroundColor: active ? colors.primary + "12" : colors.card,
+                  borderColor: active ? colors.primary : colors.border,
+                  borderWidth: 1.5,
+                },
+                colors.shadow.soft,
               ]}
             >
-              <Ionicons
-                name={loc === "gym" ? "barbell-outline" : "home-outline"}
-                size={16}
-                color={active ? "#fff" : colors.mutedForeground}
-              />
-              <Text style={[styles.locationChipText, { color: active ? "#fff" : colors.mutedForeground }]}>
-                {loc === "gym" ? "Gym" : "Home"}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      <Text style={[styles.locationHint, { color: colors.mutedForeground }]}>
-        We'll pick exercises for your setup
-      </Text>
-
-      <View style={styles.goalGrid}>
-        {GOALS.map((g) => {
-          const active = selectedGoal === g.key;
-          return (
-            <TouchableOpacity
-              key={g.key}
-              onPress={() => {
-                Haptics.selectionAsync();
-                onSelectGoal(g.key);
-              }}
-              activeOpacity={0.85}
-              style={[
-                styles.goalCard,
-                { backgroundColor: colors.card, ...colors.shadow.soft },
-                active && { borderWidth: 2, borderColor: g.color },
-              ]}
-            >
-              {active && (
-                <LinearGradient
-                  colors={[g.color + "18", g.color + "04"]}
-                  style={StyleSheet.absoluteFillObject}
-                />
-              )}
-              <View style={[styles.goalIconWrap, { backgroundColor: g.color + (active ? "25" : "15") }]}>
-                <Ionicons name={g.icon} size={24} color={g.color} />
-              </View>
-              <Text style={[styles.goalCardTitle, { color: colors.foreground }]}>{g.key}</Text>
-              <Text style={[styles.goalCardDesc, { color: colors.mutedForeground }]}>{g.description}</Text>
-              {active && (
-                <View style={[styles.checkBadge, { backgroundColor: g.color }]}>
-                  <Ionicons name="checkmark" size={12} color="#fff" />
-                </View>
-              )}
+              <Ionicons name={src.icon as any} size={20} color={active ? colors.primary : colors.mutedForeground} />
+              <Text style={[styles.goalCardTitle, { color: colors.foreground, marginTop: 8 }]}>{src.label}</Text>
+              <Text style={[styles.goalCardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{src.desc}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      <View style={[styles.aiSuggestionBox, { backgroundColor: colors.card, borderColor: colors.primary + "30", ...colors.shadow.soft }]}>
-        <View style={styles.aiSuggestionTop}>
-          <Ionicons name="sparkles" size={18} color={colors.primary} />
-          <Text style={[styles.aiSuggestionTitle, { color: colors.foreground }]}>Not sure what's best for you?</Text>
+      {planSource === "ai" ? (
+        <>
+          <View style={styles.goalGrid}>
+            {GOALS.map((g) => {
+              const active = selectedGoal === g.key;
+              return (
+                <TouchableOpacity
+                  key={g.key}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    onSelectGoal(g.key);
+                  }}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.goalCard,
+                    { backgroundColor: colors.card, ...colors.shadow.soft },
+                    active && { borderWidth: 2, borderColor: g.color },
+                  ]}
+                >
+                  {active && (
+                    <LinearGradient
+                      colors={[g.color + "18", g.color + "04"]}
+                      style={StyleSheet.absoluteFillObject}
+                    />
+                  )}
+                  <View style={[styles.goalIconWrap, { backgroundColor: g.color + (active ? "25" : "15") }]}>
+                    <Ionicons name={g.icon} size={24} color={g.color} />
+                  </View>
+                  <Text style={[styles.goalCardTitle, { color: colors.foreground }]}>{g.key}</Text>
+                  <Text style={[styles.goalCardDesc, { color: colors.mutedForeground }]}>{g.description}</Text>
+                  {active && (
+                    <View style={[styles.checkBadge, { backgroundColor: g.color }]}>
+                      <Ionicons name="checkmark" size={12} color="#fff" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={[styles.aiSuggestionBox, { backgroundColor: colors.card, borderColor: colors.primary + "30", ...colors.shadow.soft }]}>
+            <View style={styles.aiSuggestionTop}>
+              <Ionicons name="analytics-outline" size={18} color={colors.primary} />
+              <Text style={[styles.aiSuggestionTitle, { color: colors.foreground }]}>Smart goal pick</Text>
+            </View>
+            <Text style={[styles.aiSuggestionDesc, { color: colors.mutedForeground }]}>
+              Leave goal unselected and AI recommends from your real InBody — body fat %, muscle mass, visceral fat, BMI, and weight.
+            </Text>
+            <TouchableOpacity onPress={() => router.push("/inbody" as any)} style={[styles.outlineBtn, { borderColor: colors.border, marginTop: 10 }]}>
+              <Ionicons name="camera-outline" size={16} color={colors.foreground} />
+              <Text style={[styles.outlineBtnText, { color: colors.foreground }]}>Upload InBody</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      ) : (
+        <View style={[styles.aiSuggestionBox, { backgroundColor: colors.cyan + "10", borderColor: colors.cyan + "40", ...colors.shadow.soft }]}>
+          <View style={styles.aiSuggestionTop}>
+            <Ionicons name="person" size={18} color={colors.cyan} />
+            <Text style={[styles.aiSuggestionTitle, { color: colors.foreground }]}>Trainer-managed program</Text>
+          </View>
+          <Text style={[styles.aiSuggestionDesc, { color: colors.mutedForeground }]}>
+            {hasTrainerAssigned
+              ? `${trainerName ?? "Your trainer"} manages your plan. Switch to AI Coach to regenerate yourself.`
+              : "Ask your trainer to assign a plan. Until then, use AI Coach for a temporary program."}
+          </Text>
         </View>
-        <Text style={[styles.aiSuggestionDesc, { color: colors.mutedForeground }]}>
-          AI will analyse your InBody report — body fat %, muscle mass, visceral fat, and more — to recommend the perfect starting goal.
-        </Text>
-        <TouchableOpacity
-          onPress={onAskAI}
-          style={[styles.askAIBtn, { backgroundColor: colors.primary }]}
-        >
-          <Ionicons name="sparkles" size={16} color="#fff" />
-          <Text style={styles.askAIBtnText}>Ask AI</Text>
-        </TouchableOpacity>
-      </View>
+      )}
 
       <View style={styles.bottomBtns}>
-        {selectedGoal && (
-          <TouchableOpacity
-            onPress={() => onGeneratePlan(selectedGoal)}
-            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
-          >
-            <Ionicons name="flash" size={18} color="#fff" />
-            <Text style={styles.primaryBtnText}>Generate My Plan</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={onBuildPlan}
+          style={[styles.primaryBtn, { backgroundColor: planSource === "trainer" ? colors.cyan : colors.primary }]}
+        >
+          <Ionicons name={planSource === "trainer" ? "person" : "flash"} size={18} color="#fff" />
+          <Text style={styles.primaryBtnText}>
+            {planSource === "trainer" ? "Use Trainer Plan" : selectedGoal ? "Build My Plan" : "Ask AI & Build Plan"}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={onSkip} style={styles.skipLink}>
           <Text style={[styles.skipLinkText, { color: colors.mutedForeground }]}>Skip for now</Text>
         </TouchableOpacity>
@@ -476,7 +564,19 @@ function GoalStep({
 
 // ─── Loading Step ─────────────────────────────────────────────────────────────
 
-function LoadingStep({ colors, title, subtitle }: any) {
+function LoadingStep({
+  colors,
+  title,
+  subtitle,
+  metrics,
+  steps = ["Reviewing metrics", "Selecting strategy", "Fetching exercises"],
+}: {
+  colors: any;
+  title: string;
+  subtitle: string;
+  metrics?: UserMetricsSnapshot | null;
+  steps?: string[];
+}) {
   return (
     <View style={styles.loadingContainer}>
       <View style={[styles.loadingCard, { backgroundColor: colors.card, ...colors.shadow.strong }]}>
@@ -485,14 +585,52 @@ function LoadingStep({ colors, title, subtitle }: any) {
         </View>
         <Text style={[styles.loadingTitle, { color: colors.foreground }]}>{title}</Text>
         <Text style={[styles.loadingSubtitle, { color: colors.mutedForeground }]}>{subtitle}</Text>
+        {metrics?.hasInBodyReport ? (
+          <MetricsPanel colors={colors} metrics={metrics} compact />
+        ) : metrics === null || metrics === undefined ? (
+          <Text style={[styles.loadingDotText, { color: colors.mutedForeground, marginTop: 12, textAlign: "center" }]}>
+            Loading your body composition data…
+          </Text>
+        ) : (
+          <Text style={[styles.loadingDotText, { color: colors.mutedForeground, marginTop: 12, textAlign: "center" }]}>
+            No InBody scan on file — using goal-based defaults
+          </Text>
+        )}
         <View style={[styles.loadingDots, { backgroundColor: colors.muted }]}>
-          {["Reviewing metrics", "Selecting strategy", "Fetching exercises"].map((label, i) => (
+          {steps.map((label) => (
             <View key={label} style={styles.loadingDotRow}>
               <View style={[styles.loadingDotDot, { backgroundColor: colors.primary + "40" }]} />
               <Text style={[styles.loadingDotText, { color: colors.mutedForeground }]}>{label}</Text>
             </View>
           ))}
         </View>
+      </View>
+    </View>
+  );
+}
+
+function MetricsPanel({ colors, metrics, compact }: { colors: any; metrics: UserMetricsSnapshot; compact?: boolean }) {
+  const rows = [
+    { label: "Body fat", value: metrics.bodyFat ? `${metrics.bodyFat}%` : "—" },
+    { label: "Muscle mass", value: metrics.skeletalMuscleMass ? `${metrics.skeletalMuscleMass} kg` : "—" },
+    { label: "Visceral fat", value: metrics.visceralFat ?? "—" },
+    { label: "BMI", value: metrics.bmi ?? "—" },
+    { label: "Weight", value: metrics.weight ? `${metrics.weight} kg` : "—" },
+  ];
+
+  return (
+    <View style={[styles.metricsPanel, { backgroundColor: colors.primary + "08", borderColor: colors.primary + "25" }, compact && { marginTop: 12 }]}>
+      <View style={styles.aiSuggestionTop}>
+        <Ionicons name="body-outline" size={16} color={colors.primary} />
+        <Text style={[styles.aiSuggestionTitle, { color: colors.foreground, fontSize: 13 }]}>Your data AI considers</Text>
+      </View>
+      <View style={styles.metricsGrid}>
+        {rows.map((r) => (
+          <View key={r.label} style={styles.metricCell}>
+            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>{r.label}</Text>
+            <Text style={[styles.metricValue, { color: colors.foreground }]}>{r.value}</Text>
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -604,10 +742,11 @@ function AIMetaRow({ icon, label, value, color, colors }: any) {
 
 // ─── Plan Ready Step ──────────────────────────────────────────────────────────
 
-function PlanReadyStep({ colors, topPad, insets, goal, workoutLocation, strategy, plan, expandedDay, expandedEx, onToggleDay, onToggleEx, onSave, onBack }: any) {
+function PlanReadyStep({ colors, topPad, insets, goal, strategy, plan, aiRecommendation, metricsConsidered, expandedDay, expandedEx, onToggleDay, onToggleEx, onSave, onBack }: any) {
   const goalMeta = GOALS.find((g) => g.key === goal) ?? GOALS[0];
   const activeDays = plan.filter((d: PlanDay) => !d.isRest);
   const totalCals = activeDays.reduce((s: number, d: PlanDay) => s + d.estimatedCalories, 0);
+  const totalExercises = activeDays.reduce((s: number, d: PlanDay) => s + (d.exercises?.length ?? 0), 0);
 
   return (
     <ScrollView
@@ -623,22 +762,23 @@ function PlanReadyStep({ colors, topPad, insets, goal, workoutLocation, strategy
             <Ionicons name="checkmark-circle" size={14} color={goalMeta.color} />
             <Text style={[styles.sparkText, { color: goalMeta.color }]}>Plan Ready</Text>
           </View>
-          <Text style={[styles.planTitle, { color: colors.foreground }]}>{strategy.splitName}</Text>
-          <View style={styles.planSubtitleRow}>
-            <Text style={[styles.planSubtitle, { color: colors.mutedForeground }]}>for {goal}</Text>
-            <View style={[styles.locationPill, { backgroundColor: colors.primary + "18" }]}>
-              <Ionicons
-                name={workoutLocation === "gym" ? "barbell-outline" : "home-outline"}
-                size={12}
-                color={colors.primary}
-              />
-              <Text style={[styles.locationPillText, { color: colors.primary }]}>
-                {workoutLocation === "gym" ? "Gym" : "Home"}
-              </Text>
-            </View>
-          </View>
+          <Text style={[styles.planTitle, { color: colors.foreground }]}>{planDisplayTitle(goal, strategy)}</Text>
+          <Text style={[styles.planSubtitle, { color: colors.mutedForeground }]}>
+            {strategy.splitName !== planDisplayTitle(goal, strategy) ? `${strategy.splitName} · ` : ""}
+            for {goal} · {totalExercises} exercises/week
+          </Text>
         </View>
       </View>
+
+      {metricsConsidered?.hasInBodyReport ? (
+        <MetricsPanel colors={colors} metrics={metricsConsidered} />
+      ) : null}
+
+      {aiRecommendation ? (
+        <View style={[styles.aiSuggestionBox, { backgroundColor: colors.card, borderColor: goalMeta.color + "30", marginBottom: 12, ...colors.shadow.soft }]}>
+          <Text style={[styles.aiSuggestionDesc, { color: colors.foreground }]}>{aiRecommendation.reasoning}</Text>
+        </View>
+      ) : null}
 
       {/* Strategy overview */}
       <View style={[styles.strategyCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
@@ -740,7 +880,24 @@ function DayCard({ day, colors, goalColor, expanded, expandedEx, onToggle, onTog
         )}
       </View>
 
-      {expanded && !isRest && day.exercises.length > 0 && (
+      {expanded && !isRest && (day.sections?.length ? day.sections : [{ id: "main", title: "Exercises", exercises: day.exercises }]).map((section: any) => (
+        <View key={section.id + section.title} style={styles.sectionBlock}>
+          <Text style={[styles.sectionBlockTitle, { color: dayColor }]}>
+            {section.title}{section.durationMinutes ? ` · ${section.durationMinutes} min` : ""}
+          </Text>
+          {section.exercises.map((ex: ExerciseCard) => (
+            <ExerciseItem
+              key={ex.id + ex.name + section.id}
+              ex={ex}
+              colors={colors}
+              accentColor={dayColor}
+              expanded={expandedEx === `${day.dayName}-${section.id}-${ex.id}`}
+              onToggle={() => onToggleEx(`${day.dayName}-${section.id}-${ex.id}`)}
+            />
+          ))}
+        </View>
+      ))}
+      {expanded && !isRest && !day.sections?.length && day.exercises.length > 0 && (
         <View style={styles.exerciseList}>
           {day.exercises.map((ex: ExerciseCard) => (
             <ExerciseItem
@@ -894,38 +1051,18 @@ const styles = StyleSheet.create({
   sparkBadge: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   sparkText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   onboardingTitle: { fontSize: 30, fontFamily: "Inter_700Bold", letterSpacing: -0.5, lineHeight: 36 },
-  locationRow: {
-    flexDirection: "row",
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 4,
-    gap: 4,
-    marginBottom: 6,
-  },
-  locationChip: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  locationChipText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  locationHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 16, textAlign: "center" },
-  planSubtitleRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
-  locationPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  locationPillText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   onboardingSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 22 },
 
   goalGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  sourceRow: { flexDirection: "row", gap: 10 },
+  sourceCard: { flex: 1, borderRadius: 14, padding: 12, gap: 4, alignItems: "flex-start" },
+  metricsPanel: { borderRadius: 14, padding: 14, gap: 10, borderWidth: 1, marginBottom: 12 },
+  metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  metricCell: { width: (width - 64) / 3, gap: 2 },
+  metricLabel: { fontSize: 10, fontFamily: "Inter_400Regular" },
+  metricValue: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  sectionBlock: { gap: 6, marginTop: 8 },
+  sectionBlockTitle: { fontSize: 12, fontFamily: "Inter_600SemiBold", marginBottom: 4, paddingHorizontal: 4 },
   goalCard: { width: (width - 42) / 2, borderRadius: 16, padding: 14, gap: 8, overflow: "hidden", borderWidth: 2, borderColor: "transparent" },
   goalIconWrap: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   goalCardTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },

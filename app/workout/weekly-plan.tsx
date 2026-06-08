@@ -1,5 +1,7 @@
 import { GlassCard } from "@/components/ui/GlassCard";
+import { useWorkoutPlan } from "@/hooks/useWorkoutPlan";
 import { useColors } from "@/hooks/useColors";
+import type { WorkoutDayPlan, WorkoutPlanBundle } from "@/lib/workout-plan-api";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -20,7 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 type DayPlan = {
   day: string;
   label: string;
-  type: "push" | "pull" | "legs" | "upper" | "lower" | "cardio" | "rest";
+  type: "push" | "pull" | "legs" | "upper" | "lower" | "cardio" | "rest" | "training";
   muscles: string[];
   duration: string;
   calories: number;
@@ -53,7 +55,56 @@ const TYPE_META: Record<string, { color: string; icon: keyof typeof Ionicons.gly
   lower: { color: "#FBBF24", icon: "walk", label: "Lower" },
   cardio: { color: "#FF4757", icon: "flame", label: "Cardio" },
   rest: { color: "#1A2540", icon: "moon", label: "Rest" },
+  training: { color: "#00D4FF", icon: "barbell", label: "Training" },
 };
+
+function inferDayType(day: WorkoutDayPlan): DayPlan["type"] {
+  if (day.isRest) return "rest";
+  if (day.isCardio) return "cardio";
+  const focus = day.focus.toLowerCase();
+  if (focus.includes("push")) return "push";
+  if (focus.includes("pull")) return "pull";
+  if (focus.includes("leg")) return "legs";
+  if (focus.includes("upper")) return "upper";
+  if (focus.includes("lower")) return "lower";
+  return "training";
+}
+
+function mapUserDayToDayPlan(day: WorkoutDayPlan): DayPlan {
+  const type = inferDayType(day);
+  const muscles = [
+    ...new Set(
+      day.exercises.map((e) => e.target ?? e.bodyPart ?? "").filter(Boolean),
+    ),
+  ];
+  return {
+    day: day.dayName.slice(0, 3),
+    label: day.dayName,
+    type,
+    muscles,
+    duration: day.estimatedDuration,
+    calories: day.estimatedCalories,
+    exercises: day.exercises.map((e) => ({
+      name: e.name,
+      sets: e.sets,
+      reps: e.repsRange,
+      rest: `${e.restSeconds}s`,
+      notes: e.instructions?.[0] ?? "",
+      muscle: e.target ?? e.bodyPart ?? "",
+    })),
+  };
+}
+
+function buildUserWorkoutPlan(bundle: WorkoutPlanBundle): WorkoutPlan {
+  return {
+    name: bundle.title,
+    description: bundle.goal ? `Goal: ${bundle.goal}` : "Your personalised workout plan",
+    level: "Personalised",
+    goal: bundle.goal ?? "Fitness",
+    color: "#FF6B35",
+    days: bundle.days.map(mapUserDayToDayPlan),
+  };
+}
 
 const PPL_EXERCISES = {
   push: [
@@ -154,15 +205,19 @@ export default function WeeklyPlanScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const { planBundle } = useWorkoutPlan();
+
+  const userPlan = planBundle ? buildUserWorkoutPlan(planBundle) : null;
+  const availablePlans = userPlan ? [userPlan, ...PLANS] : PLANS;
 
   const [selectedPlanIdx, setSelectedPlanIdx] = useState(0);
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
   const [completedDays, setCompletedDays] = useState<Set<string>>(new Set());
   const [showExercise, setShowExercise] = useState<Exercise | null>(null);
 
-  const plan = PLANS[selectedPlanIdx];
+  const plan = availablePlans[selectedPlanIdx] ?? availablePlans[0];
   const dayPlan = plan.days[selectedDayIdx];
-  const meta = TYPE_META[dayPlan.type];
+  const meta = TYPE_META[dayPlan.type] ?? TYPE_META.training;
 
   const toggleComplete = (key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -207,7 +262,7 @@ export default function WeeklyPlanScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.planList}
         >
-          {PLANS.map((p, i) => (
+          {availablePlans.map((p, i) => (
             <TouchableOpacity
               key={p.name}
               onPress={() => {

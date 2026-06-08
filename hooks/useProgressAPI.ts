@@ -9,6 +9,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getApiBaseUrl } from "@/lib/api";
+import { useDailyRefresh } from "@/lib/daily-refresh";
+import { useFocusEffect } from "expo-router";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -198,6 +200,14 @@ export function useProgressAPI() {
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchDashboard();
+    }, [fetchDashboard]),
+  );
+
+  useDailyRefresh(fetchDashboard);
 
   return {
     dashboard,

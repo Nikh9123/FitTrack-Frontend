@@ -1,4 +1,5 @@
 import { useColors } from "@/hooks/useColors";
+import { useTheme } from "@/context/ThemeContext";
 import { hapticSelection } from "@/lib/haptics";
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
@@ -38,6 +39,7 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colors = useColors();
+  const { isDark } = useTheme();
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
@@ -74,12 +76,12 @@ function ClassicTabLayout() {
           isIOS ? (
             <BlurView
               intensity={90}
-              tint="extraLight"
+              tint={isDark ? "dark" : "extraLight"}
               style={StyleSheet.absoluteFill}
             />
           ) : isWeb ? (
             <View
-              style={[StyleSheet.absoluteFill, { backgroundColor: "#FFFFFF" }]}
+              style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]}
             />
           ) : null,
       }}

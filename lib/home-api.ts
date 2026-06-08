@@ -90,10 +90,14 @@ export async function fetchHomeWeightSummary(token: string): Promise<HomeWeightS
   };
 }
 
-/** Today's exercises — first day group in the plan */
+import { getWeekdayName } from "@/lib/activity-storage";
+
+/** Exercises scheduled for today's weekday in the plan */
 export function getTodaysPlanExercises(plan: CurrentWorkoutPlan) {
-  if (!plan.exercises?.length) return { dayName: "Workout", exercises: [] as CurrentWorkoutPlan["exercises"] };
-  const dayName = plan.exercises[0].dayName;
+  if (!plan.exercises?.length) {
+    return { dayName: "Workout", exercises: [] as CurrentWorkoutPlan["exercises"] };
+  }
+  const dayName = getWeekdayName();
   const exercises = plan.exercises.filter((e) => e.dayName === dayName);
   return { dayName, exercises };
 }

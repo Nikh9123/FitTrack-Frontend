@@ -1,9 +1,15 @@
 import { useAuth, UserRole } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
+import { useTheme, type ThemeMode } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
-import { hapticSelection, hapticWarning } from "@/lib/haptics";
+import {
+  advanceDevDayForTesting,
+  getDailyRefreshDebugInfo,
+  resetDevDateOverride,
+} from "@/lib/daily-refresh";
+import { hapticSelection, hapticSuccess, hapticWarning } from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -36,13 +42,21 @@ const MENU_ITEMS = [
   { icon: "information-circle-outline" as const, label: "About FitTrack", sub: "Version 1.0.0" },
 ];
 
+const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: "sunny" | "moon" | "phone-portrait-outline" }[] = [
+  { mode: "light", label: "Day", icon: "sunny" },
+  { mode: "dark", label: "Night", icon: "moon" },
+  { mode: "system", label: "Auto", icon: "phone-portrait-outline" },
+];
+
 export default function ProfileScreen() {
   const colors = useColors();
+  const { mode, setMode } = useTheme();
   const insets = useSafeAreaInsets();
   const { user, logout, switchRole, refreshProfile } = useAuth();
-  const { recentWorkouts, bmi, streak, todayLog } = useFitness();
+  const { recentWorkouts, bmi, streak, todayLog, refreshDailyData, refreshActivity } = useFitness();
   const [refreshing, setRefreshing] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
+  const [devDateInfo, setDevDateInfo] = useState(getDailyRefreshDebugInfo);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "U";
@@ -76,6 +90,25 @@ export default function ProfileScreen() {
     switchRole(role);
   };
 
+  const handleSimulateNextDay = async () => {
+    advanceDevDayForTesting();
+    setDevDateInfo(getDailyRefreshDebugInfo());
+    await Promise.all([refreshActivity(), refreshDailyData()]);
+    void hapticSuccess();
+    Alert.alert(
+      "Day advanced (dev)",
+      `App now treats today as ${getDailyRefreshDebugInfo().weekday}, ${getDailyRefreshDebugInfo().effectiveDate}.\n\nGo to Home to verify rings, meals, and workout card reset.`,
+    );
+  };
+
+  const handleResetDevDate = async () => {
+    resetDevDateOverride();
+    setDevDateInfo(getDailyRefreshDebugInfo());
+    await Promise.all([refreshActivity(), refreshDailyData()]);
+    void hapticSuccess();
+    Alert.alert("Date reset", "Back to the real calendar date.");
+  };
+
   return (
     <ScreenEntrance style={{ flex: 1 }}>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -87,12 +120,12 @@ export default function ProfileScreen() {
         {/* Profile hero */}
         <View style={[styles.profileHero, { ...colors.shadow.medium }]}>
           <LinearGradient
-            colors={["#1A1A2E", "#16213E", "#0D0D1A"]}
+            colors={colors.profileHeroGradient as [string, string, ...string[]]}
             style={styles.profileBg}
           >
             {/* Settings */}
             <TouchableOpacity style={styles.settingsBtn}>
-              <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.8)" />
+              <Ionicons name="settings-outline" size={20} color={colors.onGradientMuted} />
             </TouchableOpacity>
 
             {/* Avatar */}
@@ -102,22 +135,22 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <Text style={styles.heroName}>{user?.name ?? "FitTrack User"}</Text>
+            <Text style={[styles.heroName, { color: colors.onGradient }]}>{user?.name ?? "FitTrack User"}</Text>
             <View style={styles.heroMetaRow}>
-              <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.heroMeta}>{user?.region ?? "Tokyo, Japan"}</Text>
-              <Text style={styles.heroDot}>·</Text>
-              <Text style={styles.heroMeta}>{user?.role === "trainer" ? "Trainer" : "Basic Member"}</Text>
+              <Ionicons name="location-outline" size={13} color={colors.onGradientMuted} />
+              <Text style={[styles.heroMeta, { color: colors.onGradientMuted }]}>{user?.region ?? "Tokyo, Japan"}</Text>
+              <Text style={[styles.heroDot, { color: colors.onGradientMuted }]}>·</Text>
+              <Text style={[styles.heroMeta, { color: colors.onGradientMuted }]}>{user?.role === "trainer" ? "Trainer" : "Basic Member"}</Text>
             </View>
 
             {/* Stats row */}
-            <View style={styles.heroStats}>
+            <View style={[styles.heroStats, { backgroundColor: colors.heroStatsBg }]}>
               <HeroStat value={`${recentWorkouts.length}`} label="Workouts" />
-              <View style={styles.heroStatDivider} />
+              <View style={[styles.heroStatDivider, { backgroundColor: colors.heroStatsDivider }]} />
               <HeroStat value={`${streak}d`} label="Streak" />
-              <View style={styles.heroStatDivider} />
+              <View style={[styles.heroStatDivider, { backgroundColor: colors.heroStatsDivider }]} />
               <HeroStat value={`${bmi}`} label="BMI" />
-              <View style={styles.heroStatDivider} />
+              <View style={[styles.heroStatDivider, { backgroundColor: colors.heroStatsDivider }]} />
               <HeroStat value={`${user?.weightKg ?? todayLog.weight ?? "--"} kg`} label="Weight" />
             </View>
           </LinearGradient>
@@ -171,6 +204,49 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Appearance */}
+        <View style={[styles.themeCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
+          <Text style={[styles.themeTitle, { color: colors.foreground }]}>Appearance</Text>
+          <Text style={[styles.themeSub, { color: colors.mutedForeground }]}>
+            Choose day or night theme across the app
+          </Text>
+          <View style={styles.themeRow}>
+            {THEME_OPTIONS.map((option) => {
+              const active = mode === option.mode;
+              return (
+                <TouchableOpacity
+                  key={option.mode}
+                  onPress={() => {
+                    void hapticSelection();
+                    setMode(option.mode);
+                  }}
+                  style={[
+                    styles.themeBtn,
+                    {
+                      backgroundColor: active ? colors.primary : colors.muted,
+                      borderColor: active ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={option.icon}
+                    size={18}
+                    color={active ? colors.primaryForeground : colors.mutedForeground}
+                  />
+                  <Text
+                    style={[
+                      styles.themeBtnText,
+                      { color: active ? colors.primaryForeground : colors.mutedForeground },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         {/* Role switcher */}
         <View style={[styles.roleCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
           <Text style={[styles.roleTitle, { color: colors.foreground }]}>Switch Role (Demo)</Text>
@@ -184,7 +260,7 @@ export default function ProfileScreen() {
                   { backgroundColor: user?.role === r ? colors.primary : colors.muted },
                 ]}
               >
-                <Text style={[styles.roleBtnText, { color: user?.role === r ? "#fff" : colors.mutedForeground }]}>
+                <Text style={[styles.roleBtnText, { color: user?.role === r ? colors.primaryForeground : colors.mutedForeground }]}>
                   {r.charAt(0).toUpperCase() + r.slice(1)}
                 </Text>
               </TouchableOpacity>
@@ -220,6 +296,37 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {__DEV__ ? (
+          <View style={[styles.devCard, { backgroundColor: colors.card, borderColor: colors.primary + "40" }]}>
+            <View style={styles.devHeader}>
+              <Ionicons name="flask-outline" size={18} color={colors.primary} />
+              <Text style={[styles.devTitle, { color: colors.foreground }]}>Daily Refresh Test</Text>
+            </View>
+            <Text style={[styles.devSub, { color: colors.mutedForeground }]}>
+              Effective date: {devDateInfo.effectiveDate} ({devDateInfo.weekday})
+              {devDateInfo.offsetDays > 0 ? ` · +${devDateInfo.offsetDays}d offset` : ""}
+            </Text>
+            <Text style={[styles.devSub, { color: colors.mutedForeground }]}>
+              Logged today: {todayLog.calories} kcal · {todayLog.water} water · {todayLog.meals.length} meals
+            </Text>
+            <View style={styles.devRow}>
+              <TouchableOpacity
+                onPress={() => void handleSimulateNextDay()}
+                style={[styles.devBtn, { backgroundColor: colors.primary }]}
+              >
+                <Ionicons name="calendar-outline" size={16} color="#fff" />
+                <Text style={styles.devBtnText}>Simulate Next Day</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => void handleResetDevDate()}
+                style={[styles.devBtn, { backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border }]}
+              >
+                <Text style={[styles.devBtnText, { color: colors.foreground }]}>Reset</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
         {/* Logout */}
         <TouchableOpacity
           onPress={handleLogout}
@@ -236,10 +343,11 @@ export default function ProfileScreen() {
 }
 
 function HeroStat({ value, label }: { value: string; label: string }) {
+  const colors = useColors();
   return (
     <View style={styles.heroStatItem}>
-      <Text style={styles.heroStatVal}>{value}</Text>
-      <Text style={styles.heroStatLabel}>{label}</Text>
+      <Text style={[styles.heroStatVal, { color: colors.onGradient }]}>{value}</Text>
+      <Text style={[styles.heroStatLabel, { color: colors.onGradientMuted }]}>{label}</Text>
     </View>
   );
 }
@@ -267,15 +375,15 @@ const styles = StyleSheet.create({
   avatarWrap: { alignItems: "center", marginVertical: 12 },
   avatar: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", borderWidth: 2 },
   avatarText: { fontSize: 28, fontFamily: "Inter_700Bold" },
-  heroName: { color: "#fff", fontSize: 22, fontFamily: "Inter_700Bold", textAlign: "center", letterSpacing: -0.3 },
+  heroName: { fontSize: 22, fontFamily: "Inter_700Bold", textAlign: "center", letterSpacing: -0.3 },
   heroMetaRow: { flexDirection: "row", alignItems: "center", gap: 4, justifyContent: "center", marginTop: 4, marginBottom: 18 },
-  heroMeta: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: "Inter_400Regular" },
-  heroDot: { color: "rgba(255,255,255,0.4)", fontSize: 12 },
-  heroStats: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 16, padding: 14 },
+  heroMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  heroDot: { fontSize: 12 },
+  heroStats: { flexDirection: "row", alignItems: "center", borderRadius: 16, padding: 14 },
   heroStatItem: { flex: 1, alignItems: "center", gap: 2 },
-  heroStatVal: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" },
-  heroStatLabel: { color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "Inter_400Regular" },
-  heroStatDivider: { width: 0.5, height: 32, backgroundColor: "rgba(255,255,255,0.15)" },
+  heroStatVal: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  heroStatLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  heroStatDivider: { width: 0.5, height: 32 },
 
   scoreCard: { borderRadius: 16, padding: 16, gap: 10 },
   scoreHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -310,6 +418,21 @@ const styles = StyleSheet.create({
   roleBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
   roleBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 
+  themeCard: { borderRadius: 16, padding: 16, gap: 10 },
+  themeTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  themeSub: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  themeRow: { flexDirection: "row", gap: 8 },
+  themeBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  themeBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+
   menuCard: { borderRadius: 16, padding: 4 },
   menuItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
   menuIconWrap: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
@@ -318,4 +441,20 @@ const styles = StyleSheet.create({
 
   logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 14, borderWidth: 1 },
   logoutText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+
+  devCard: { borderRadius: 16, padding: 16, gap: 10, borderWidth: 1 },
+  devHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  devTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  devSub: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  devRow: { flexDirection: "row", gap: 8, marginTop: 4 },
+  devBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 10,
+  },
+  devBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
 });

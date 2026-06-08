@@ -16,8 +16,8 @@ import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -47,7 +47,7 @@ export default function DietScreen() {
   const insets = useSafeAreaInsets();
   const bottomPad = useBottomTabPadding();
   const { token } = useAuth();
-  const { todayLog, calorieGoal, addMeal, removeMeal } = useFitness();
+  const { todayLog, calorieGoal, addMeal, removeMeal, refreshDailyData } = useFitness();
   const [showAdd, setShowAdd] = useState(false);
   const [selectedType, setSelectedType] = useState<MealType>("lunch");
   const [search, setSearch] = useState("");
@@ -64,6 +64,12 @@ export default function DietScreen() {
   const [pickedFood, setPickedFood] = useState<PickedFood | null>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshDailyData();
+    }, [refreshDailyData]),
+  );
 
   useEffect(() => {
     if (!showAdd || !token) return;

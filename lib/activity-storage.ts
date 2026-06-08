@@ -2,6 +2,38 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const STORAGE_KEY = "@fittrack_daily_activity";
 
+/** Dev-only: shift "today" forward N days to test daily refresh without waiting for midnight. */
+let devDateOffsetDays = 0;
+
+export function getDevDateOffsetDays(): number {
+  return __DEV__ ? devDateOffsetDays : 0;
+}
+
+export function setDevDateOffsetDays(days: number): void {
+  if (!__DEV__) return;
+  devDateOffsetDays = days;
+}
+
+export function getEffectiveDate(now = new Date()): Date {
+  const d = new Date(now);
+  if (__DEV__ && devDateOffsetDays !== 0) {
+    d.setDate(d.getDate() + devDateOffsetDays);
+  }
+  return d;
+}
+
+export function getTodayDateKey(now = new Date()): string {
+  const d = getEffectiveDate(now);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function getWeekdayName(now = new Date()): string {
+  return getEffectiveDate(now).toLocaleDateString("en-US", { weekday: "long" });
+}
+
 export interface StoredDailyActivity {
   date: string;
   steps: number;
@@ -13,12 +45,8 @@ export interface StoredDailyActivity {
   lastUpdated: string;
 }
 
-export function getTodayDateKey(now = new Date()): string {
-  return now.toISOString().split("T")[0];
-}
-
 export function startOfDay(now = new Date()): Date {
-  const d = new Date(now);
+  const d = getEffectiveDate(now);
   d.setHours(0, 0, 0, 0);
   return d;
 }

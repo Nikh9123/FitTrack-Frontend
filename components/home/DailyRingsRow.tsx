@@ -11,6 +11,9 @@ interface DailyRingsRowProps {
   waterGlasses: number;
   waterGoal: number;
   onStepGoalPress?: () => void;
+  onStepsPress?: () => void;
+  onCaloriesPress?: () => void;
+  onWaterPress?: () => void;
 }
 
 export function DailyRingsRow({
@@ -21,6 +24,9 @@ export function DailyRingsRow({
   waterGlasses,
   waterGoal,
   onStepGoalPress,
+  onStepsPress,
+  onCaloriesPress,
+  onWaterPress,
 }: DailyRingsRowProps) {
   const colors = useColors();
   const track = (colors as { ringTrack?: string }).ringTrack ?? colors.border;
@@ -32,6 +38,8 @@ export function DailyRingsRow({
       sub: `${Math.round((steps / stepGoal) * 100)}%`,
       progress: steps / stepGoal,
       color: colors.primary,
+      onPress: onStepsPress,
+      onLongPress: onStepGoalPress,
     },
     {
       label: "Calories",
@@ -39,6 +47,7 @@ export function DailyRingsRow({
       sub: "eaten",
       progress: calories / calorieGoal,
       color: colors.green,
+      onPress: onCaloriesPress,
     },
     {
       label: "Water",
@@ -46,6 +55,7 @@ export function DailyRingsRow({
       sub: `/${waterGoal}`,
       progress: waterGlasses / waterGoal,
       color: colors.cyan,
+      onPress: onWaterPress,
     },
   ];
 
@@ -72,9 +82,15 @@ export function DailyRingsRow({
           </>
         );
 
-        if (index === 0 && onStepGoalPress) {
+        if (ring.onPress || ring.onLongPress) {
           return (
-            <TouchableOpacity key={ring.label} style={styles.item} onPress={onStepGoalPress} activeOpacity={0.7}>
+            <TouchableOpacity
+              key={ring.label}
+              style={styles.item}
+              onPress={ring.onPress}
+              onLongPress={ring.onLongPress}
+              activeOpacity={0.7}
+            >
               {content}
             </TouchableOpacity>
           );

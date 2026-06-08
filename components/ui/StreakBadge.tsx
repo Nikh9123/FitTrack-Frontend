@@ -2,16 +2,17 @@ import { PulseGlow } from "@/components/progress/PulseGlow";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface StreakBadgeProps {
   count: number;
   label?: string;
   size?: "sm" | "md";
   pulse?: boolean;
+  onPress?: () => void;
 }
 
-export function StreakBadge({ count, label, size = "md", pulse = true }: StreakBadgeProps) {
+export function StreakBadge({ count, label, size = "md", pulse = true, onPress }: StreakBadgeProps) {
   const colors = useColors();
   if (count <= 0) return null;
 
@@ -41,8 +42,22 @@ export function StreakBadge({ count, label, size = "md", pulse = true }: StreakB
   if (pulse) {
     return (
       <PulseGlow active color={colors.primary} style={styles.pulseWrap}>
-        {inner}
+        {onPress ? (
+          <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+            {inner}
+          </TouchableOpacity>
+        ) : (
+          inner
+        )}
       </PulseGlow>
+    );
+  }
+
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.pulseWrap}>
+        {inner}
+      </TouchableOpacity>
     );
   }
 

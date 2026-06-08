@@ -16,6 +16,7 @@ export async function logWorkoutSetApi(
   payload: {
     workoutSessionId: string;
     exerciseId: string;
+    exerciseName?: string;
     weight: number;
     reps: number;
     setsCompleted?: number;
@@ -27,6 +28,7 @@ export async function logWorkoutSetApi(
     body: JSON.stringify({
       workoutSessionId: payload.workoutSessionId,
       exerciseId: payload.exerciseId,
+      exerciseName: payload.exerciseName,
       weight: payload.weight,
       reps: payload.reps,
       setsCompleted: payload.setsCompleted ?? 1,

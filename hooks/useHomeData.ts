@@ -5,6 +5,7 @@ import {
   type CurrentWorkoutPlan,
   type HomeWeightSummary,
 } from "@/lib/home-api";
+import { useDailyRefresh } from "@/lib/daily-refresh";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 
@@ -46,6 +47,8 @@ export function useHomeData() {
       void refresh();
     }, [refresh]),
   );
+
+  useDailyRefresh(refresh);
 
   return { workoutPlan, weightSummary, loading, error, refresh };
 }
