@@ -2,7 +2,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
-const PREFS_KEY = "@fittrack_reminder_prefs";
+import { STORAGE_KEYS } from "@/constants/branding";
+
+const PREFS_KEY = STORAGE_KEYS.reminderPrefs;
 
 export type ReminderKey = "weight" | "food" | "exercise" | "steps";
 

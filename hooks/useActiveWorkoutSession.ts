@@ -28,7 +28,9 @@ interface UseActiveWorkoutSessionOptions {
   onComplete: (result: CompletedWorkout, updatedPRs: Record<string, number>) => void;
 }
 
-const STORAGE_KEY = "@fittrack_active_session";
+import { STORAGE_KEYS } from "@/constants/branding";
+
+const STORAGE_KEY = STORAGE_KEYS.activeSession;
 
 export function useActiveWorkoutSession({
   token,

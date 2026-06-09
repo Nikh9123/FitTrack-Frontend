@@ -1,5 +1,5 @@
 {
-    "name": "fittrack-frontend",
+    "name": "veera-frontend",
     "version": "1.0.0",
     "private": true,
     "main": "expo-router/entry",

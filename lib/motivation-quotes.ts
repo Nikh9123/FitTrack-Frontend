@@ -12,7 +12,7 @@ export class MotivationQuoteError extends Error {
   }
 }
 
-/** Live quote via FitTrack backend (proxies ZenQuotes + type.fit) */
+/** Live quote via Veera backend (proxies ZenQuotes + type.fit) */
 export async function fetchMotivationQuote(): Promise<MotivationQuote> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12_000);

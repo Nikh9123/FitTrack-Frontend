@@ -101,7 +101,7 @@ function buildTrainerTemplate(goal: DietPlanGoal) {
     goal,
     summary: "Professional meal plan assigned by your trainer.",
     dailyTargets: { calories, proteinG, carbsG, fatG },
-    tips: ["Follow portion sizes", "Stay hydrated", "Log meals daily in FitTrack"],
+    tips: ["Follow portion sizes", "Stay hydrated", "Log meals daily in Veera"],
     meals: [
       {
         mealTime: "breakfast" as const,

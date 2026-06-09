@@ -1,10 +1,8 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useColorScheme } from "react-native";
+import { getStorageItem, setStorageItem } from "@/lib/storage-migrate";
 
 export type ThemeMode = "light" | "dark" | "system";
-
-const STORAGE_KEY = "@fittrack_theme_mode";
 
 type ThemeContextValue = {
   mode: ThemeMode;
@@ -20,7 +18,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>("system");
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
+    getStorageItem("theme")
       .then((stored) => {
         if (stored === "light" || stored === "dark" || stored === "system") {
           setModeState(stored);
@@ -31,7 +29,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
-    AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {});
+    setStorageItem("theme", next).catch(() => {});
   }, []);
 
   const colorScheme: "light" | "dark" =

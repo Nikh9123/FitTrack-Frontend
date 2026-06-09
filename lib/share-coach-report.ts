@@ -1,4 +1,5 @@
 import type { ShareCoachReportData } from "@/components/coach/ShareableCoachCard";
+import { APP_NAME } from "@/constants/branding";
 import type { MonthlyReport, WeeklyReview } from "@/lib/coach-api";
 import * as Sharing from "expo-sharing";
 import { useCallback, useRef, useState } from "react";
@@ -75,7 +76,7 @@ export function useShareCoachReport() {
         }
       }
       await Share.share({
-        message: `${data.title} · ${data.periodLabel}\nScore ${data.score}/100\n\n${data.headline}\n\n— FitTrack Coach`,
+        message: `${data.title} · ${data.periodLabel}\nScore ${data.score}/100\n\n${data.headline}\n\n— ${APP_NAME} Coach`,
       });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Could not share report";

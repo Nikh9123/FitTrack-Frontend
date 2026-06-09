@@ -1,10 +1,10 @@
 import Constants from "expo-constants";
 
 /** Production web app origin (also used for OAuth redirect allow-list). */
-export const PRODUCTION_APP_ORIGIN = "https://fittrack.ashirvad.work";
+export const PRODUCTION_APP_ORIGIN = "https://veera.ashirvad.work";
 
 /** Production API base URL (no trailing slash). */
-export const PRODUCTION_API_ORIGIN = "https://fittrack.ashirvad.work/api";
+export const PRODUCTION_API_ORIGIN = "https://veera.ashirvad.work/api";
 
 /**
  * App origin used for OAuth callbacks and deep links on web.

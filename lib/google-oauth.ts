@@ -1,9 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiBaseUrl } from "@/lib/api";
 import type { User } from "@/context/AuthContext";
+import { STORAGE_KEYS } from "@/constants/branding";
 
-const API_TOKEN_KEY = "@fittrack_token";
-const API_USER_KEY = "@fittrack_user";
+const API_TOKEN_KEY = STORAGE_KEYS.token;
+const API_USER_KEY = STORAGE_KEYS.user;
 
 export { getGoogleOAuthRedirectUrl } from "@/lib/oauth-redirect";
 

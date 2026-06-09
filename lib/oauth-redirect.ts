@@ -8,8 +8,8 @@ import { getGoogleOAuthRedirectUrlForWeb } from "@/lib/app-url";
  * OAuth redirect URI must match Supabase → Authentication → URL Configuration.
  *
  * - Expo Go: exp://YOUR_LAN_IP:8081/--/auth/callback (add exp://YOUR_LAN_IP:8081/** in Supabase)
- * - Dev/production build: fittrack://auth/callback
- * - Web: https://fittrack.ashirvad.work/auth/callback or http://localhost:8081/auth/callback
+ * - Dev/production build: veera://auth/callback
+ * - Web: https://veera.ashirvad.work/auth/callback or http://localhost:8081/auth/callback
  */
 export function getGoogleOAuthRedirectUrl(): string {
   if (Platform.OS === "web") {

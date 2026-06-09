@@ -1,4 +1,5 @@
 import { AchievementBadgeGrid, achievementToBadge } from "@/components/progress/AchievementBadgeGrid";
+import { APP_NAME } from "@/constants/branding";
 import { useAuth, type UserRole } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
 import { useTheme, type ThemeMode } from "@/context/ThemeContext";
@@ -41,7 +42,7 @@ const MENU_ITEMS = [
   { icon: "notifications-outline" as const, label: "Notifications", sub: "Push & email alerts" },
   { icon: "shield-checkmark-outline" as const, label: "Privacy & Security", sub: "Data & permissions" },
   { icon: "help-circle-outline" as const, label: "Help & Support", sub: "FAQs and contact" },
-  { icon: "information-circle-outline" as const, label: "About FitTrack", sub: "Version 1.0.0" },
+  { icon: "information-circle-outline" as const, label: `About ${APP_NAME}`, sub: "Version 1.0.0" },
 ];
 
 const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: "sunny" | "moon" | "phone-portrait-outline" }[] = [
@@ -141,7 +142,7 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <Text style={[styles.heroName, { color: colors.onGradient }]}>{user?.name ?? "FitTrack User"}</Text>
+            <Text style={[styles.heroName, { color: colors.onGradient }]}>{user?.name ?? `${APP_NAME} User`}</Text>
             <View style={styles.heroMetaRow}>
               <Ionicons name="location-outline" size={13} color={colors.onGradientMuted} />
               <Text style={[styles.heroMeta, { color: colors.onGradientMuted }]}>{user?.region ?? "Tokyo, Japan"}</Text>

@@ -3,7 +3,7 @@ import * as TaskManager from "expo-task-manager";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-export const BACKGROUND_STEP_SYNC_TASK = "fittrack-background-step-sync";
+import { BACKGROUND_STEP_SYNC_TASK } from "@/constants/branding";
 
 let taskDefined = false;
 

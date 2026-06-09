@@ -1,4 +1,5 @@
-﻿import { useFitness } from "@/context/FitnessContext";
+﻿import { getStorageItem, setStorageItem } from "@/lib/storage-migrate";
+import { useFitness } from "@/context/FitnessContext";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
@@ -258,8 +259,8 @@ export default function WorkoutScreen() {
       setLatestSummary(result);
       setShowSummaryModal(true);
       setShowSessionPlayer(false);
-      await AsyncStorage.setItem("@fittrack_workout_history", JSON.stringify(newHistory));
-      await AsyncStorage.setItem("@fittrack_personal_records", JSON.stringify(updatedPRs));
+      await setStorageItem("workoutHistory", JSON.stringify(newHistory));
+      await setStorageItem("personalRecords", JSON.stringify(updatedPRs));
       addWorkout({
         name: result.focus + " Session",
         date: result.date,
@@ -347,12 +348,12 @@ export default function WorkoutScreen() {
     try {
       // Active session is restored by useActiveWorkoutSession hook on mount
       if (!token) {
-        const savedHistory = await AsyncStorage.getItem("@fittrack_workout_history");
+        const savedHistory = await getStorageItem("workoutHistory");
         if (savedHistory) {
           setHistory(JSON.parse(savedHistory) as CompletedWorkout[]);
         }
       }
-      const savedPRs = await AsyncStorage.getItem("@fittrack_personal_records");
+      const savedPRs = await getStorageItem("personalRecords");
       if (savedPRs) {
         setPersonalRecords(JSON.parse(savedPRs) as Record<string, number>);
       }
@@ -364,9 +365,9 @@ export default function WorkoutScreen() {
     try {
       const apiHistory = await fetchWorkoutHistory(token, 50);
       setHistory(apiHistory);
-      await AsyncStorage.setItem("@fittrack_workout_history", JSON.stringify(apiHistory));
+      await setStorageItem("workoutHistory", JSON.stringify(apiHistory));
     } catch {
-      const savedHistory = await AsyncStorage.getItem("@fittrack_workout_history");
+      const savedHistory = await getStorageItem("workoutHistory");
       if (savedHistory) {
         setHistory(JSON.parse(savedHistory) as CompletedWorkout[]);
       }
@@ -378,9 +379,9 @@ export default function WorkoutScreen() {
     try {
       const { byExerciseName } = await fetchPersonalRecords(token);
       setPersonalRecords(byExerciseName);
-      await AsyncStorage.setItem("@fittrack_personal_records", JSON.stringify(byExerciseName));
+      await setStorageItem("personalRecords", JSON.stringify(byExerciseName));
     } catch {
-      const savedPRs = await AsyncStorage.getItem("@fittrack_personal_records");
+      const savedPRs = await getStorageItem("personalRecords");
       if (savedPRs) {
         setPersonalRecords(JSON.parse(savedPRs) as Record<string, number>);
       }

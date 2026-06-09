@@ -1,24 +1,24 @@
 {
   "expo": {
-    "name": "FitTrack",
-    "slug": "fittrack",
+    "name": "Veera",
+    "slug": "veera",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "fittrack",
+    "scheme": "veera",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F5F7FB"
+      "backgroundColor": "#070B14"
     },
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "FitTrack uses the camera to capture InBody and body composition reports.",
-        "NSPhotoLibraryUsageDescription": "FitTrack uses your photo library to upload existing InBody reports.",
-        "NSMotionUsageDescription": "FitTrack uses motion data to track walking, running, and activity summaries.",
+        "NSCameraUsageDescription": "Veera uses the camera to capture InBody and body composition reports.",
+        "NSPhotoLibraryUsageDescription": "Veera uses your photo library to upload existing InBody reports.",
+        "NSMotionUsageDescription": "Veera uses motion data to track walking, running, and activity summaries.",
         "UIBackgroundModes": ["fetch", "processing"]
       }
     },
@@ -29,7 +29,7 @@
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "package": "com.sdeashirvad.fittrack"
+      "package": "com.sdeashirvad.veera"
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -38,14 +38,14 @@
       [
         "expo-router",
         {
-          "origin": "https://fittrack.ashirvad.work"
+          "origin": "https://veera.ashirvad.work"
         }
       ],
       [
         "expo-image-picker",
         {
-          "cameraPermission": "FitTrack uses the camera to capture InBody and body composition reports.",
-          "photosPermission": "FitTrack uses your photo library to upload existing InBody reports.",
+          "cameraPermission": "Veera uses the camera to capture InBody and body composition reports.",
+          "photosPermission": "Veera uses your photo library to upload existing InBody reports.",
           "microphonePermission": false
         }
       ],
@@ -57,7 +57,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#3B82F6",
+          "color": "#FF6B35",
           "sounds": []
         }
       ]
@@ -67,7 +67,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "appUrl": "https://fittrack.ashirvad.work",
+      "appUrl": "https://veera.ashirvad.work",
       "eas": {
         "projectId": "9f892c60-5fce-4f3e-be32-a34ac9f3c60b"
       }

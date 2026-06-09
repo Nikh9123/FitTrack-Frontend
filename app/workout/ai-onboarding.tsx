@@ -267,7 +267,7 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
         "Trainer-assigned plan",
         hasTrainerAssigned
           ? `${trainerName ?? "Your trainer"} manages your workout program. Contact them for updates.`
-          : "Ask your gym trainer to assign a program in FitTrack. You can still build an AI plan anytime.",
+          : `Ask your gym trainer to assign a program in Veera. You can still build an AI plan anytime.`,
       );
       return;
     }

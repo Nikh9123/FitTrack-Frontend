@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { Alert, AppState, Platform } from "react-native";
+import { getStorageItem, setStorageItem } from "@/lib/storage-migrate";
 import { useAuth } from "@/context/AuthContext";
 import { flushSyncQueue, syncActivityToServer } from "@/lib/activity-sync";
 import { getTodayDateKey } from "@/lib/activity-storage";
@@ -376,10 +377,10 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
 
   const loadLocalOnly = useCallback(async () => {
     try {
-      const storedReports = await AsyncStorage.getItem("@fittrack_inbody_reports");
+      const storedReports = await getStorageItem("inbodyReports");
       if (storedReports) setInBodyReports(JSON.parse(storedReports) as InBodyReport[]);
 
-      const storedDevices = await AsyncStorage.getItem("@fittrack_connected_devices");
+      const storedDevices = await getStorageItem("connectedDevices");
       if (storedDevices) setConnectedDevices(JSON.parse(storedDevices) as ConnectedDevice[]);
 
       const goal = await loadStepGoalFromStorage();
@@ -423,7 +424,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         setStepTrackingStatus(status);
         setStepTrackingError(null);
         if (status === "idle" || status === "permission_denied") {
-          const dismissed = await AsyncStorage.getItem("@fittrack_step_banner_dismissed");
+          const dismissed = await getStorageItem("stepBannerDismissed");
           if (!dismissed) setShowStepPermissionBanner(true);
         }
         await refreshActivity();
@@ -561,7 +562,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     };
     const updated = [newReport, ...inBodyReports];
     setInBodyReports(updated);
-    await AsyncStorage.setItem("@fittrack_inbody_reports", JSON.stringify(updated));
+    await setStorageItem("inbodyReports", JSON.stringify(updated));
   };
 
   const setStepGoal = async (goal: number) => {
@@ -643,18 +644,18 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         : device,
     );
     setConnectedDevices(updated);
-    await AsyncStorage.setItem("@fittrack_connected_devices", JSON.stringify(updated));
+    await setStorageItem("connectedDevices", JSON.stringify(updated));
   };
 
   const enableStepTracking = async () => {
     await connectDevice("phone");
     setShowStepPermissionBanner(false);
-    await AsyncStorage.setItem("@fittrack_step_banner_dismissed", "1");
+    await setStorageItem("stepBannerDismissed", "1");
   };
 
   const dismissStepPermissionBanner = () => {
     setShowStepPermissionBanner(false);
-    void AsyncStorage.setItem("@fittrack_step_banner_dismissed", "1");
+    void setStorageItem("stepBannerDismissed", "1");
   };
 
   const bmi =

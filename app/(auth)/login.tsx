@@ -1,3 +1,5 @@
+import { APP_NAME, APP_TAGLINE } from "@/constants/branding";
+import { VeeraLogo } from "@/components/ui/VeeraLogo";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
@@ -162,9 +164,10 @@ export default function LoginScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={[colors.typography.h1, { color: colors.primary, fontSize: 38, letterSpacing: -1 }]}>FitTrack</Text>
+            <VeeraLogo size={72} withBackground style={{ marginBottom: 12 }} />
+            <Text style={[colors.typography.h1, { color: colors.primary, fontSize: 38, letterSpacing: -1 }]}>{APP_NAME}</Text>
             <Text style={[colors.typography.body, { color: colors.mutedForeground, marginTop: 6 }]}>
-              Your gym. Your goals. Your app.
+              {APP_TAGLINE}
             </Text>
           </View>
 

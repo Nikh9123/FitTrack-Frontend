@@ -1,7 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiBaseUrl } from "@/lib/api";
 
-export const STEP_GOAL_STORAGE_KEY = "@fittrack_step_goal";
+import { STORAGE_KEYS } from "@/constants/branding";
+
+export const STEP_GOAL_STORAGE_KEY = STORAGE_KEYS.stepGoal;
 export const DEFAULT_STEP_GOAL = 10000;
 
 export function clampStepGoal(value: number): number {

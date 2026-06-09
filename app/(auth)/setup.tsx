@@ -1,3 +1,4 @@
+import { APP_NAME } from "@/constants/branding";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { getApiBaseUrl } from "@/lib/api";
@@ -432,7 +433,7 @@ export default function SetupScreen() {
             <View style={styles.stepContent}>
               <Ionicons name="checkmark-circle" size={64} color={currentColor} style={styles.stepIcon} />
               <Text style={[colors.typography.h1, { color: colors.foreground, textAlign: "center" }]}>Profile Complete!</Text>
-              <Text style={[colors.typography.body, { color: colors.mutedForeground, textAlign: "center", marginBottom: 8 }]}>You're ready to use FitTrack as a {role}</Text>
+              <Text style={[colors.typography.body, { color: colors.mutedForeground, textAlign: "center", marginBottom: 8 }]}>You're ready to use {APP_NAME} as a {role}</Text>
 
               <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
                 {[

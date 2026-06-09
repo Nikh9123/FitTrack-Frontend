@@ -2,7 +2,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiBaseUrl } from "@/lib/api";
 import type { ActivitySummary } from "@/context/FitnessContext";
 
-const SYNC_QUEUE_KEY = "@fittrack_activity_sync_queue";
+import { STORAGE_KEYS } from "@/constants/branding";
+
+const SYNC_QUEUE_KEY = STORAGE_KEYS.activitySyncQueue;
 
 export interface ActivitySyncPayload {
   summaryDate: string;

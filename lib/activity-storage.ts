@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const STORAGE_KEY = "@fittrack_daily_activity";
+import { STORAGE_KEYS } from "@/constants/branding";
+
+const STORAGE_KEY = STORAGE_KEYS.dailyActivity;
 
 /** Dev-only: shift "today" forward N days to test daily refresh without waiting for midnight. */
 let devDateOffsetDays = 0;

@@ -1,5 +1,6 @@
+import { APP_NAME } from "@/constants/branding";
+import { VeeraLogo } from "@/components/ui/VeeraLogo";
 import { useColors } from "@/hooks/useColors";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -24,8 +25,8 @@ export const ShareableCoachCard = React.forwardRef<View, { data: ShareCoachRepor
     <View ref={ref} collapsable={false} style={[styles.wrap, { backgroundColor: colors.card }]}>
       <LinearGradient colors={[accent + "22", colors.card]} style={styles.hero}>
         <View style={styles.brandRow}>
-          <Ionicons name="fitness" size={18} color={accent} />
-          <Text style={[styles.brand, { color: colors.foreground }]}>FitTrack Coach</Text>
+          <VeeraLogo size={22} />
+          <Text style={[styles.brand, { color: colors.foreground }]}>{APP_NAME} Coach</Text>
         </View>
         <Text style={[styles.title, { color: colors.foreground }]}>{data.title}</Text>
         <Text style={[styles.period, { color: colors.mutedForeground }]}>{data.periodLabel}</Text>
@@ -46,7 +47,7 @@ export const ShareableCoachCard = React.forwardRef<View, { data: ShareCoachRepor
             </View>
           ))}
         </View>
-        <Text style={[styles.footer, { color: colors.mutedForeground }]}>Generated with FitTrack AI Coach</Text>
+        <Text style={[styles.footer, { color: colors.mutedForeground }]}>Generated with {APP_NAME} AI Coach</Text>
       </View>
     </View>
   );

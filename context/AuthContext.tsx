@@ -3,6 +3,7 @@ import * as WebBrowser from "expo-web-browser";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { getApiBaseUrl } from "@/lib/api";
+import { migrateAuthStorage } from "@/lib/storage-migrate";
 import {
   API_TOKEN_KEY,
   API_USER_KEY,
@@ -105,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadUser = async () => {
     try {
+      await migrateAuthStorage();
       const [storedToken, storedUser] = await AsyncStorage.multiGet([API_TOKEN_KEY, API_USER_KEY]);
       const savedToken = storedToken?.[1];
       const userValue = storedUser?.[1];
