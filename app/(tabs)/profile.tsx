@@ -1,6 +1,8 @@
-import { useAuth, UserRole } from "@/context/AuthContext";
+import { AchievementBadgeGrid, achievementToBadge } from "@/components/progress/AchievementBadgeGrid";
+import { useAuth, type UserRole } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
 import { useTheme, type ThemeMode } from "@/context/ThemeContext";
+import { useAchievements } from "@/hooks/useAchievements";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
@@ -26,7 +28,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ReminderSettingsSheet } from "@/components/profile/ReminderSettingsSheet";
 
-const ACHIEVEMENTS = [
+const ACHIEVEMENTS_STATIC_FALLBACK = [
   { icon: "flame" as const, label: "12-Day\nStreak", color: "#FF6B35" },
   { icon: "barbell" as const, label: "50\nWorkouts", color: "#3B82F6" },
   { icon: "trophy" as const, label: "10 kg\nLost", color: "#F59E0B" },
@@ -54,6 +56,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout, switchRole, refreshProfile } = useAuth();
   const { recentWorkouts, bmi, streak, todayLog, refreshDailyData, refreshActivity } = useFitness();
+  const { achievements, currentStage, totalPoints, refresh: refreshAchievements } = useAchievements();
   const [refreshing, setRefreshing] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [devDateInfo, setDevDateInfo] = useState(getDailyRefreshDebugInfo);
@@ -61,7 +64,10 @@ export default function ProfileScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "U";
 
-  useEffect(() => { refreshProfile().catch(() => {}); }, []);
+  useEffect(() => {
+    refreshProfile().catch(() => {});
+    void refreshAchievements();
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -181,17 +187,48 @@ export default function ProfileScreen() {
         </View>
 
         {/* Achievements */}
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Achievements</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.achieveList}>
-          {ACHIEVEMENTS.map((a) => (
-            <View key={a.label} style={[styles.achieveCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
-              <View style={[styles.achieveIcon, { backgroundColor: a.color + "18" }]}>
-                <Ionicons name={a.icon} size={22} color={a.color} />
+        <View style={styles.achieveHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 0 }]}>Achievements</Text>
+          <TouchableOpacity onPress={() => router.push("/coach/journey")}>
+            <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 13 }}>See all</Text>
+          </TouchableOpacity>
+        </View>
+        {currentStage ? (
+          <Text style={[styles.scoreSub, { color: colors.mutedForeground, marginBottom: 8 }]}>
+            {currentStage.name} · {totalPoints} pts
+          </Text>
+        ) : null}
+        {achievements.filter((a) => a.earned).length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.achieveList}>
+            {achievements
+              .filter((a) => a.earned)
+              .slice(0, 8)
+              .map((a) => {
+                const badge = achievementToBadge(a);
+                return (
+                  <View key={a.id} style={[styles.achieveCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
+                    <View style={[styles.achieveIcon, { backgroundColor: badge.color + "18" }]}>
+                      <Ionicons name={badge.icon} size={22} color={badge.color} />
+                    </View>
+                    <Text style={[styles.achieveLabel, { color: colors.foreground }]} numberOfLines={2}>
+                      {badge.label}
+                    </Text>
+                  </View>
+                );
+              })}
+          </ScrollView>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.achieveList}>
+            {ACHIEVEMENTS_STATIC_FALLBACK.map((a) => (
+              <View key={a.label} style={[styles.achieveCard, { backgroundColor: colors.card, ...colors.shadow.soft, opacity: 0.45 }]}>
+                <View style={[styles.achieveIcon, { backgroundColor: a.color + "18" }]}>
+                  <Ionicons name={a.icon} size={22} color={a.color} />
+                </View>
+                <Text style={[styles.achieveLabel, { color: colors.mutedForeground }]}>{a.label}</Text>
               </View>
-              <Text style={[styles.achieveLabel, { color: colors.foreground }]}>{a.label}</Text>
-            </View>
-          ))}
-        </ScrollView>
+            ))}
+          </ScrollView>
+        )}
 
         {/* Body stats */}
         <View style={[styles.bodyCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
@@ -399,6 +436,7 @@ const styles = StyleSheet.create({
   scoreLabel: { fontSize: 12, fontFamily: "Inter_400Regular" },
 
   sectionTitle: { fontSize: 17, fontFamily: "Inter_700Bold", marginBottom: -4 },
+  achieveHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
   achieveList: { gap: 10, paddingRight: 16 },
   achieveCard: { width: 100, borderRadius: 16, padding: 14, alignItems: "center", gap: 8 },
   achieveIcon: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },

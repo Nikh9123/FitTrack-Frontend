@@ -1,3 +1,4 @@
+import { AnimatedTabIcon } from "@/components/ui/AnimatedTabIcon";
 import { useColors } from "@/hooks/useColors";
 import { useTheme } from "@/context/ThemeContext";
 import { hapticSelection } from "@/lib/haptics";
@@ -90,60 +91,75 @@ function ClassicTabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, focused }) =>
-            isIOS ? (
-              <SymbolView name={focused ? "house.fill" : "house"} tintColor={color} size={24} />
-            ) : (
-              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              {isIOS ? (
+                <SymbolView name={focused ? "house.fill" : "house"} tintColor={color} size={24} />
+              ) : (
+                <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
+              )}
+            </AnimatedTabIcon>
+          ),
         }}
       />
       <Tabs.Screen
         name="analysis"
         options={{
           title: "Analysis",
-          tabBarIcon: ({ color, focused }) =>
-            isIOS ? (
-              <SymbolView name={focused ? "chart.bar.fill" : "chart.bar"} tintColor={color} size={24} />
-            ) : (
-              <Ionicons name={focused ? "stats-chart" : "stats-chart-outline"} size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              {isIOS ? (
+                <SymbolView name={focused ? "chart.bar.fill" : "chart.bar"} tintColor={color} size={24} />
+              ) : (
+                <Ionicons name={focused ? "stats-chart" : "stats-chart-outline"} size={22} color={color} />
+              )}
+            </AnimatedTabIcon>
+          ),
         }}
       />
       <Tabs.Screen
         name="workout"
         options={{
           title: "Workout",
-          tabBarIcon: ({ color, focused }) =>
-            isIOS ? (
-              <SymbolView name="dumbbell" tintColor={color} size={24} />
-            ) : (
-              <Ionicons name={focused ? "barbell" : "barbell-outline"} size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              {isIOS ? (
+                <SymbolView name="dumbbell" tintColor={color} size={24} />
+              ) : (
+                <Ionicons name={focused ? "barbell" : "barbell-outline"} size={22} color={color} />
+              )}
+            </AnimatedTabIcon>
+          ),
         }}
       />
       <Tabs.Screen
         name="progress"
         options={{
           title: "Progress",
-          tabBarIcon: ({ color, focused }) =>
-            isIOS ? (
-              <SymbolView name="chart.line.uptrend.xyaxis" tintColor={color} size={24} />
-            ) : (
-              <Ionicons name={focused ? "trending-up" : "trending-up-outline"} size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              {isIOS ? (
+                <SymbolView name="chart.line.uptrend.xyaxis" tintColor={color} size={24} />
+              ) : (
+                <Ionicons name={focused ? "trending-up" : "trending-up-outline"} size={22} color={color} />
+              )}
+            </AnimatedTabIcon>
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, focused }) =>
-            isIOS ? (
-              <SymbolView name={focused ? "person.fill" : "person"} tintColor={color} size={24} />
-            ) : (
-              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
-            ),
+          tabBarIcon: ({ color, focused }) => (
+            <AnimatedTabIcon focused={focused}>
+              {isIOS ? (
+                <SymbolView name={focused ? "person.fill" : "person"} tintColor={color} size={24} />
+              ) : (
+                <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
+              )}
+            </AnimatedTabIcon>
+          ),
         }}
       />
       <Tabs.Screen name="diet" options={{ href: null }} />

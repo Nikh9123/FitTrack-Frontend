@@ -6,9 +6,10 @@ export const MOTION = {
   springSoft: { damping: 18, stiffness: 120 },
   timingRing: { duration: 900 },
   timingFast: { duration: 350 },
-  timingScreen: { duration: 320 },
+  timingScreen: { duration: 340 },
+  timingScore: { duration: 600 },
   staggerBarMs: 45,
-  staggerCardMs: 60,
+  staggerCardMs: 55,
 } as const;
 
 export function entranceFade(index = 0) {

@@ -1,24 +1,9 @@
 import { MOTION, entranceFade } from "@/constants/animations";
 import { ProgressRing } from "@/components/ui/ProgressRing";
-import React, { useEffect, useState } from "react";
+import { useCountUp } from "@/hooks/useCountUp";
+import React, { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withDelay, withTiming } from "react-native-reanimated";
-
-function useCountUp(target: number, duration = 900) {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    const start = Date.now();
-    let frame: number;
-    const tick = () => {
-      const p = Math.min((Date.now() - start) / duration, 1);
-      setValue(Math.round(target * p));
-      if (p < 1) frame = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => cancelAnimationFrame(frame);
-  }, [target, duration]);
-  return value;
-}
 
 const BREAKDOWN_LABELS: Record<string, string> = {
   streak: "Streak",
@@ -83,7 +68,7 @@ export function AnimatedFitnessScoreCard({
 }) {
   const scoreColor =
     score >= 80 ? colors.green : score >= 60 ? colors.primary : score >= 40 ? "#F59E0B" : colors.red;
-  const displayScore = useCountUp(score);
+  const displayScore = useCountUp(score, MOTION.timingScore.duration);
 
   return (
     <Animated.View

@@ -8,6 +8,12 @@ export type ColorPalette = {
   cyan: string;
 };
 
+const EMPTY_ANALYSIS_SECTION = {
+  status: "—",
+  description: "No analysis available for this section.",
+  recommendation: "",
+};
+
 export const parseGeminiAnalysis = (value: unknown): GeminiAnalysis | null => {
   if (!value) return null;
   if (typeof value === "object") return value as GeminiAnalysis;
@@ -21,6 +27,74 @@ export const parseGeminiAnalysis = (value: unknown): GeminiAnalysis | null => {
   }
   return null;
 };
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => (typeof item === "string" ? item : JSON.stringify(item)));
+}
+
+/** True when stored analysis is missing, stub seed data, or lacks full Groq sections. */
+export function needsInbodyAiAnalysis(value: unknown): boolean {
+  const raw = parseGeminiAnalysis(value);
+  if (!raw) return true;
+
+  const tagged = raw as GeminiAnalysis & { __aiSource?: string };
+  if (tagged.__aiSource === "fallback") return true;
+  if (raw.overallSummary?.toLowerCase().includes("dummy inbody")) return true;
+
+  const hasCoreSections =
+    Boolean(raw.bodyFatAnalysis?.description?.trim()) &&
+    Boolean(raw.muscleMassAnalysis?.description?.trim()) &&
+    Boolean(raw.metabolismInsights?.description?.trim()) &&
+    Boolean(raw.visceralFatAnalysis?.recommendation?.trim());
+
+  return !hasCoreSections;
+}
+
+/** Ensures saved/partial InBody AI payloads always have arrays and nested objects. */
+export function normalizeGeminiAnalysis(value: unknown): GeminiAnalysis | null {
+  const raw = parseGeminiAnalysis(value);
+  if (!raw) return null;
+
+  const incomplete = needsInbodyAiAnalysis(raw);
+  const workoutPlan =
+    raw.workoutPlan && typeof raw.workoutPlan === "object" ? raw.workoutPlan : undefined;
+
+  return {
+    ...raw,
+    overallSummary: raw.overallSummary ?? "Your InBody scan has been processed.",
+    fitnessLevel: raw.fitnessLevel ?? "—",
+    bodyFatAnalysis: incomplete
+      ? (raw.bodyFatAnalysis ?? { status: "—", description: "", recommendation: "" })
+      : { ...EMPTY_ANALYSIS_SECTION, ...raw.bodyFatAnalysis },
+    muscleMassAnalysis: incomplete
+      ? (raw.muscleMassAnalysis ?? { status: "—", description: "", recommendation: "" })
+      : { ...EMPTY_ANALYSIS_SECTION, ...raw.muscleMassAnalysis },
+    metabolismInsights: {
+      bmr: raw.metabolismInsights?.bmr ?? "—",
+      metabolicAge: raw.metabolismInsights?.metabolicAge ?? "—",
+      description: raw.metabolismInsights?.description ?? "",
+      recommendation: raw.metabolismInsights?.recommendation,
+    },
+    visceralFatAnalysis: {
+      level: raw.visceralFatAnalysis?.level ?? "—",
+      risk: raw.visceralFatAnalysis?.risk ?? "—",
+      recommendation: raw.visceralFatAnalysis?.recommendation ?? "",
+      whrImplication: raw.visceralFatAnalysis?.whrImplication,
+    },
+    strengths: asStringArray(raw.strengths),
+    weaknesses: asStringArray(raw.weaknesses),
+    healthRisks: asStringArray(raw.healthRisks),
+    recommendations: asStringArray(raw.recommendations),
+    goalSuggestions: asStringArray(raw.goalSuggestions),
+    workoutPlan: {
+      goal: workoutPlan?.goal ?? "",
+      planType: workoutPlan?.planType ?? "",
+      weeklySchedule: Array.isArray(workoutPlan?.weeklySchedule) ? workoutPlan.weeklySchedule : [],
+      cardioRecommendation: workoutPlan?.cardioRecommendation ?? "",
+    },
+  };
+}
 
 export const getRating = (metric: string, value: number, colors: ColorPalette) => {
   if (metric === "bodyFat") {

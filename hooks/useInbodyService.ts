@@ -168,7 +168,10 @@ export async function analyzeInbodyReport(reportId: string, token: string): Prom
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    const msg = (data as { error?: string }).error ?? "Analysis failed";
+    const msg =
+      (data as { message?: string; error?: string }).message ??
+      (data as { error?: string }).error ??
+      "Analysis failed";
     throw new Error(msg);
   }
   return res.json() as Promise<AnalyzeResponse>;

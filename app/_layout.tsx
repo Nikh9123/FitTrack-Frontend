@@ -15,6 +15,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AchievementUnlockProvider } from "@/context/AchievementUnlockContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { FitnessProvider } from "@/context/FitnessContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
@@ -78,6 +79,18 @@ function RootLayoutNav() {
         options={{ animation: "slide_from_right", headerShown: false }}
       />
       <Stack.Screen
+        name="coach/journey"
+        options={{ animation: "slide_from_right", headerShown: false }}
+      />
+      <Stack.Screen
+        name="coach/weekly-review"
+        options={{ animation: "slide_from_right", headerShown: false }}
+      />
+      <Stack.Screen
+        name="coach/monthly-report"
+        options={{ animation: "slide_from_right", headerShown: false }}
+      />
+      <Stack.Screen
         name="metrics"
         options={{ animation: "slide_from_right", headerShown: false }}
       />
@@ -108,14 +121,16 @@ export default function RootLayout() {
         <ErrorBoundary>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
-              <FitnessProvider>
-                <ReminderBootstrap />
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                  <KeyboardProvider>
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
-              </FitnessProvider>
+              <AchievementUnlockProvider>
+                <FitnessProvider>
+                  <ReminderBootstrap />
+                  <GestureHandlerRootView style={{ flex: 1 }}>
+                    <KeyboardProvider>
+                      <RootLayoutNav />
+                    </KeyboardProvider>
+                  </GestureHandlerRootView>
+                </FitnessProvider>
+              </AchievementUnlockProvider>
             </AuthProvider>
           </QueryClientProvider>
         </ErrorBoundary>

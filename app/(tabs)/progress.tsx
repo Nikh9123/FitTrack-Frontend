@@ -1,8 +1,10 @@
-import { useFitness } from "@/context/FitnessContext";
+import { AchievementBadgeGrid, achievementToBadge } from "@/components/progress/AchievementBadgeGrid";
+import { useAchievementUnlocks } from "@/context/AchievementUnlockContext";
 import { useAuth } from "@/context/AuthContext";
+import { useFitness } from "@/context/FitnessContext";
 import { useColors } from "@/hooks/useColors";
+import { useAchievements } from "@/hooks/useAchievements";
 import { useProgressAPI } from "@/hooks/useProgressAPI";
-import { InsightsSkeleton } from "@/components/skeletons/InsightsSkeleton";
 import { ScoreCardSkeleton } from "@/components/skeletons/ScoreCardSkeleton";
 import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
 import { AnimatedFitnessScoreCard } from "@/components/progress/AnimatedFitnessScoreCard";
@@ -10,7 +12,11 @@ import { AnimatedStatCard } from "@/components/progress/AnimatedStatCard";
 import { FitnessJournal } from "@/components/progress/FitnessJournal";
 import { MetricIllustration } from "@/components/progress/MetricIllustration";
 import { PulseGlow } from "@/components/progress/PulseGlow";
+import { EnergyAreaChart } from "@/components/charts/EnergyAreaChart";
+import { ShimmerOverlay } from "@/components/ui/ShimmerOverlay";
+import { useCountUp } from "@/hooks/useCountUp";
 import { entranceFade } from "@/constants/animations";
+import { withAlpha } from "@/constants/energy-glow";
 import {
   fetchProgressHistory,
   fetchProgressInsights,
@@ -28,9 +34,10 @@ import {
 } from "@/lib/progress-weight-api";
 import { Ionicons } from "@expo/vector-icons";
 import { hapticLight, hapticMedium, hapticSelection, hapticSuccess } from "@/lib/haptics";
+import { fetchWeeklyReview, isWeeklyReviewNew, type WeeklyReview } from "@/lib/coach-api";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Modal,
   Platform,
@@ -41,7 +48,6 @@ import {
   View,
   Dimensions,
 } from "react-native";
-import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Circle } from "react-native-svg";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -70,47 +76,6 @@ const ENERGY_LABELS = ["Very Low 😞", "Low 😔", "Moderate 😐", "High 😊"
 
 type Mode   = "weight" | "fat" | "muscle" | "calories";
 type WeightChartSource = "inbody" | "scale";
-
-// ─── AreaChart ────────────────────────────────────────────────────────────────
-
-function AreaChart({ data, color, width, height }: { data: number[]; color: string; width: number; height: number }) {
-  if (!data || data.length < 2) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const pad = 10;
-  const points = data.map((v, i) => {
-    const x = pad + (i / (data.length - 1)) * (width - pad * 2);
-    const y = height - pad - ((v - min) / range) * (height - pad * 2 - 10);
-    return { x, y };
-  });
-  const linePath = points
-    .map((p, i) => (i === 0 ? `M${p.x},${p.y}` : `C${points[i-1].x+(p.x-points[i-1].x)/2},${points[i-1].y} ${points[i-1].x+(p.x-points[i-1].x)/2},${p.y} ${p.x},${p.y}`))
-    .join(" ");
-  const areaPath = `${linePath} L${points[points.length-1].x},${height-pad} L${points[0].x},${height-pad} Z`;
-  return (
-    <Svg width={width} height={height}>
-      <Defs>
-        <SvgGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <Stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </SvgGradient>
-      </Defs>
-      <Path d={areaPath} fill="url(#areaGrad)" />
-      <Path d={linePath} stroke={color} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((p, i) => (
-        <Circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 5 : 3} fill={color} />
-      ))}
-    </Svg>
-  );
-}
-
-function AnimatedBar({ targetH, color, delay }: { targetH: number; color: string; delay: number }) {
-  const h = useSharedValue(0);
-  useEffect(() => { h.value = withDelay(delay, withSpring(targetH, { damping: 14 })); }, [targetH]);
-  const style = useAnimatedStyle(() => ({ height: h.value }));
-  return <Animated.View style={[{ width: "100%", borderRadius: 6, minHeight: 4 }, style, { backgroundColor: color }]} />;
-}
 
 // ─── Empty State Card ─────────────────────────────────────────────────────────
 
@@ -255,9 +220,12 @@ function CheckinModal({
 export default function ProgressScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { recentWorkouts, todayLog, bmi, weeklyCalories, refreshDailyData, lastSyncedAt } = useFitness();
+  const { recentWorkouts, todayLog, bmi, weeklyCalories, refreshDailyData, lastSyncedAt, syncActivityNow } = useFitness();
   const { token } = useAuth();
   const { dashboard, aiInsights, loading, insightsLoading, logCheckin, fetchAIInsights, refreshDashboard } = useProgressAPI();
+  const { achievements, totalPoints, earnedCount, currentStage, refresh: refreshAchievements, evaluate } = useAchievements();
+  const { queueUnlocks } = useAchievementUnlocks();
+  const [weeklyReview, setWeeklyReview] = useState<WeeklyReview | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [chartMode, setChartMode] = useState<Mode>("weight");
@@ -310,7 +278,22 @@ export default function ProgressScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshDashboard();
-    }, [refreshDashboard]),
+      void (async () => {
+        await syncActivityNow();
+        await loadJournal();
+        await refreshAchievements();
+        const unlocked = await evaluate("manual");
+        if (unlocked.length) queueUnlocks(unlocked);
+        if (token) {
+          try {
+            const review = await fetchWeeklyReview(token);
+            setWeeklyReview(review);
+          } catch {
+            setWeeklyReview(null);
+          }
+        }
+      })();
+    }, [refreshDashboard, syncActivityNow, loadJournal, refreshAchievements, evaluate, queueUnlocks, token]),
   );
 
   useEffect(() => {
@@ -402,11 +385,20 @@ export default function ProgressScreen() {
   const hasCheckedIn  = !!dashboard.recentCheckin;
 
   const handleCheckin = async (data: any) => {
-    await logCheckin(data);
+    const result = await logCheckin(data);
+    if (result?.newlyUnlocked?.length) queueUnlocks(result.newlyUnlocked);
     setCheckinVisible(false);
     await refreshDailyData();
+    await refreshAchievements();
     void hapticSuccess();
   };
+
+  const achievementBadges = useMemo(() => {
+    const earned = achievements.filter((a) => a.earned);
+    const inProgress = achievements.filter((a) => !a.earned && a.progressPercent > 0);
+    const locked = achievements.filter((a) => !a.earned && a.progressPercent === 0);
+    return [...earned, ...inProgress, ...locked].slice(0, 9).map(achievementToBadge);
+  }, [achievements]);
 
   const handleLoadInsights = async () => {
     setInsightsExpanded(true);
@@ -443,6 +435,68 @@ export default function ProgressScreen() {
             )}
           </View>
         </View>
+
+        {/* ── Weekly Review banner (always visible when review loads) ── */}
+        {weeklyReview ? (
+          <TouchableOpacity
+            onPress={() => { void hapticLight(); router.push("/coach/weekly-review"); }}
+            style={[styles.weeklyReviewBanner, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "35" }]}
+          >
+            <LinearGradient
+              colors={[colors.primary + "10", colors.purple + "08"]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={[styles.weeklyReviewIcon, { backgroundColor: colors.primary + "20" }]}>
+              <Ionicons name="document-text" size={20} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.weeklyReviewTitleRow}>
+                <Text style={[styles.weeklyReviewTitle, { color: colors.foreground }]}>Weekly Fitness Review</Text>
+                {isWeeklyReviewNew(weeklyReview) ? (
+                  <View style={[styles.weeklyReviewNewBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.weeklyReviewNewText}>NEW</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={[styles.weeklyReviewSub, { color: colors.mutedForeground }]}>
+                {weeklyReview.weekLabel} · Score {weeklyReview.overallScore}/100 · {weeklyReview.activeDaysCount ?? 0}/7 days logged
+              </Text>
+              {weeklyReview.dailyBreakdown?.length ? (
+                <View style={styles.weeklyReviewDayRow}>
+                  {weeklyReview.dailyBreakdown.map((day) => (
+                    <View
+                      key={day.date}
+                      style={[
+                        styles.weeklyReviewDayDot,
+                        {
+                          backgroundColor:
+                            day.activitiesLogged.length > 0 ? colors.primary : colors.border + "80",
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </TouchableOpacity>
+        ) : null}
+
+        <TouchableOpacity
+          onPress={() => { void hapticLight(); router.push("/coach/monthly-report"); }}
+          style={[styles.monthlyCoachBanner, { backgroundColor: colors.purple + "12", borderColor: colors.purple + "35" }]}
+        >
+          <View style={[styles.weeklyReviewIcon, { backgroundColor: colors.purple + "20" }]}>
+            <Ionicons name="calendar" size={20} color={colors.purple} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.weeklyReviewTitle, { color: colors.foreground }]}>Monthly Coach Report</Text>
+            <Text style={[styles.weeklyReviewSub, { color: colors.mutedForeground }]}>
+              Forecasts, PRs, transformation timeline & AI summary
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.purple} />
+        </TouchableOpacity>
 
         {/* ── Onboarding banner when no data at all ── */}
         {!loading && !hasAnyData && (
@@ -540,6 +594,7 @@ export default function ProgressScreen() {
                 unit={ts.weightLost != null ? "kg" : ""}
                 label="Lost"
                 color={colors.primary}
+                positive={ts.weightLost != null && ts.weightLost > 0}
               />
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
               <TransformStat
@@ -547,6 +602,7 @@ export default function ProgressScreen() {
                 unit={ts.muscleGained != null ? "kg" : ""}
                 label="Muscle"
                 color={colors.green}
+                positive={ts.muscleGained != null && ts.muscleGained > 0}
               />
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
               <TransformStat
@@ -554,6 +610,7 @@ export default function ProgressScreen() {
                 unit={ts.fatLost != null ? "%" : ""}
                 label="Fat ↓"
                 color={colors.purple}
+                positive={ts.fatLost != null && ts.fatLost > 0}
               />
             </View>
             <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>
@@ -742,7 +799,7 @@ export default function ProgressScreen() {
 
           {chartHasData ? (
             <>
-              <AreaChart data={active.data} color={active.color} width={CHART_W} height={CHART_H} />
+              <EnergyAreaChart data={active.data} color={active.color} width={CHART_W} height={CHART_H} chartId={`progress-${chartMode}`} />
               <View style={styles.xLabels}>
                 {chartWeeks.map((w, i) => (
                   <Text key={i} style={[styles.xLabel, { color: i === chartWeeks.length - 1 ? active.color : colors.mutedForeground }]}>{w}</Text>
@@ -791,9 +848,18 @@ export default function ProgressScreen() {
             </View>
             <Text style={[styles.aiTitle, { color: colors.foreground }]}>AI Insights</Text>
             <View style={{ flex: 1 }} />
-            {insightsLoading
-              ? <InsightsSkeleton />
-              : insightsExpanded && hasInsights
+            {insightsLoading ? (
+              <View style={{ flex: 1, alignItems: "flex-end" }}>
+                <View style={[styles.analyzingPill, { backgroundColor: colors.primary + "12", overflow: "hidden" }]}>
+                  <ShimmerOverlay
+                    colors={["transparent", withAlpha(colors.primary, 0.25), "transparent"]}
+                    style={StyleSheet.absoluteFillObject}
+                    intervalMs={1800}
+                  />
+                  <Text style={[styles.refreshText, { color: colors.primary }]}>Analyzing…</Text>
+                </View>
+              </View>
+            ) : insightsExpanded && hasInsights
                 ? (
                   <TouchableOpacity
                     onPress={handleLoadInsights}
@@ -845,29 +911,24 @@ export default function ProgressScreen() {
         </Animated.View>
 
         {/* ── Achievements ── */}
-        <Animated.Text entering={entranceFade(8)} style={[styles.sectionTitle, { color: colors.foreground }]}>Achievements</Animated.Text>
-        {hasAchievements ? (
-          <View style={styles.achieveGrid}>
-            {allBadges.map((badge: any) => (
-              <View
-                key={badge.id ?? badge.label ?? badge.name}
-                style={[styles.achieveCard, { backgroundColor: colors.card, ...colors.shadow.soft, opacity: badge.unlocked ? 1 : 0.45 }]}
-              >
-                <View style={[styles.achieveIcon, { backgroundColor: badge.unlocked ? badge.color + "18" : colors.muted }]}>
-                  <Ionicons name={badge.icon} size={20} color={badge.unlocked ? badge.color : colors.mutedForeground} />
-                </View>
-                <Text style={[styles.achieveLabel, { color: badge.unlocked ? colors.foreground : colors.mutedForeground }]} numberOfLines={2}>
-                  {badge.label ?? badge.name}
-                </Text>
-                {!badge.unlocked && <Ionicons name="lock-closed" size={10} color={colors.mutedForeground} />}
-              </View>
-            ))}
-          </View>
+        <Animated.View entering={entranceFade(8)} style={styles.achieveHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 0 }]}>Achievements</Text>
+          <TouchableOpacity onPress={() => router.push("/coach/journey")}>
+            <Text style={[styles.journeyLink, { color: colors.primary }]}>Journey →</Text>
+          </TouchableOpacity>
+        </Animated.View>
+        {currentStage ? (
+          <Text style={[styles.journeyHint, { color: colors.mutedForeground }]}>
+            {currentStage.name} · {earnedCount} earned · {totalPoints} pts
+          </Text>
+        ) : null}
+        {achievementBadges.length > 0 ? (
+          <AchievementBadgeGrid badges={achievementBadges} showProgress />
         ) : (
           <EmptyCard
             icon="trophy-outline"
             title="No achievements yet."
-            subtitle="Complete workouts, log check-ins, and upload InBody reports to earn your first achievement."
+            subtitle="Complete workouts, log check-ins, steps, and water to earn your first achievement."
             colors={colors}
           />
         )}
@@ -907,10 +968,36 @@ export default function ProgressScreen() {
   );
 }
 
-function TransformStat({ value, unit, label, color }: { value: string; unit: string; label: string; color: string }) {
+function TransformStat({
+  value,
+  unit,
+  label,
+  color,
+  positive,
+}: {
+  value: string;
+  unit: string;
+  label: string;
+  color: string;
+  positive?: boolean;
+}) {
+  const parsed = parseFloat(value);
+  const numeric = Number.isFinite(parsed) ? parsed : null;
+  const display = useCountUp(numeric ?? 0, 700, numeric != null && value.includes(".") ? 1 : 0);
+  const showValue = numeric != null ? (value.includes(".") ? display.toFixed(1) : String(display)) : value;
+
   return (
     <View style={styles.transformStat}>
-      <Text style={[styles.transformVal, { color }]}>{value}<Text style={styles.transformUnit}>{unit}</Text></Text>
+      <View
+        style={[
+          styles.transformGlow,
+          positive === true ? { backgroundColor: withAlpha(color, 0.1) } : positive === false ? { backgroundColor: withAlpha("#EF4444", 0.08) } : null,
+        ]}
+      />
+      <Text style={[styles.transformVal, { color }]}>
+        {showValue}
+        <Text style={styles.transformUnit}>{unit}</Text>
+      </Text>
       <Text style={styles.transformStatLabel}>{label}</Text>
     </View>
   );
@@ -987,7 +1074,14 @@ const styles = StyleSheet.create({
   transformCard: { borderRadius: 20, padding: 20, gap: 14 },
   transformLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.8, textTransform: "uppercase" },
   transformStats: { flexDirection: "row", alignItems: "center" },
-  transformStat: { flex: 1, alignItems: "center", gap: 2 },
+  transformStat: { flex: 1, alignItems: "center", gap: 2, position: "relative", paddingVertical: 4 },
+  transformGlow: {
+    position: "absolute",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    top: 0,
+  },
   transformVal: { fontSize: 30, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   transformUnit: { fontSize: 14, fontFamily: "Inter_500Medium" },
   transformStatLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: "#8E8E93" },
@@ -1046,6 +1140,7 @@ const styles = StyleSheet.create({
   aiIconWrap: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   aiTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
   refreshBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  analyzingPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, overflow: "hidden" },
   refreshText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   insightRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   insightDot: { width: 6, height: 6, borderRadius: 3, marginTop: 6 },
@@ -1056,6 +1151,39 @@ const styles = StyleSheet.create({
   // Achievements
   sectionTitle: { fontSize: 17, fontFamily: "Inter_700Bold", marginBottom: -4 },
   achieveGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  achieveHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  journeyLink: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  journeyHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 8 },
+
+  weeklyReviewBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 4,
+  },
+  weeklyReviewIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  weeklyReviewTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  weeklyReviewTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  weeklyReviewNewBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  weeklyReviewNewText: { color: "#fff", fontSize: 9, fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
+  weeklyReviewSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  weeklyReviewDayRow: { flexDirection: "row", gap: 4, marginTop: 8 },
+  weeklyReviewDayDot: { flex: 1, height: 6, borderRadius: 3, maxWidth: 28 },
+
+  monthlyCoachBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+
   achieveCard: { width: "30%", borderRadius: 16, padding: 12, gap: 4, alignItems: "center", flexGrow: 1 },
   achieveIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   achieveLabel: { fontSize: 11, fontFamily: "Inter_500Medium", textAlign: "center" },

@@ -136,7 +136,7 @@ interface FitnessContextType {
   streak: number;
   weeklyCalories: number[];
   addWater: (glasses?: number) => Promise<void>;
-  logWeight: (weight: number) => Promise<void>;
+  logWeight: (weight: number) => Promise<import("@/lib/achievements-api").UnlockedAchievement[]>;
   addMeal: (
     meal: Omit<Meal, "id" | "time"> & { foodItemId?: string; servings?: number },
   ) => Promise<void>;
@@ -150,6 +150,7 @@ interface FitnessContextType {
   refreshDailyData: () => Promise<void>;
   setStepGoal: (goal: number) => Promise<void>;
   logManualSteps: (steps: number) => Promise<void>;
+  syncActivityNow: () => Promise<void>;
   bmi: number;
 }
 
@@ -258,14 +259,29 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const backfillAndSync = useCallback(async () => {
-    if (!tokenRef.current || Platform.OS === "web") return;
+    if (!tokenRef.current) return;
     try {
       await flushSyncQueue(tokenRef.current);
-      const days = await backfillRecentDays(7);
-      for (const day of days) {
-        const summary = snapshotToSummary(day.snapshot, sleepHours);
-        await syncActivityToServer(tokenRef.current, summary, day.date).catch(() => {});
+
+      if (Platform.OS !== "web") {
+        const days = await backfillRecentDays(7);
+        for (const day of days) {
+          const summary = snapshotToSummary(day.snapshot, sleepHours);
+          await syncActivityToServer(tokenRef.current, summary, day.date).catch(() => {});
+        }
       }
+
+      const cached = await getStepTrackingSnapshot();
+      if (cached.date === getTodayDateKey() && cached.steps > 0) {
+        const summary = snapshotToSummary(cached, sleepHours);
+        await syncActivityToServer(
+          tokenRef.current,
+          summary,
+          cached.date,
+          cached.source === "manual" ? "manual" : "phone_sensors",
+        ).catch(() => {});
+      }
+
       setLastSyncedAt(new Date().toISOString());
       setSyncError(null);
     } catch {
@@ -462,11 +478,12 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     setTodayLog((prev) => ({ ...prev, weight }));
     if (!tokenRef.current) {
       requireAuth();
-      return;
+      return [];
     }
     try {
-      await logWeightApi(tokenRef.current, weight);
+      const result = await logWeightApi(tokenRef.current, weight);
       setNutritionError(null);
+      return result.newlyUnlocked ?? [];
     } catch (err: any) {
       setNutritionError(err.message);
       throw err;
@@ -555,15 +572,53 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const syncActivityNow = useCallback(async () => {
+    if (!tokenRef.current) return;
+    try {
+      await flushSyncQueue(tokenRef.current);
+      const cached = await getStepTrackingSnapshot();
+      if (cached.date === getTodayDateKey() && cached.steps > 0) {
+        const summary = snapshotToSummary(cached, sleepHours);
+        await syncActivityToServer(
+          tokenRef.current,
+          summary,
+          cached.date,
+          cached.source === "manual" ? "manual" : "phone_sensors",
+        );
+        setLastSyncedAt(new Date().toISOString());
+        setSyncError(null);
+      }
+    } catch (err: any) {
+      setSyncError(err.message);
+    }
+  }, [sleepHours]);
+
   const logManualSteps = async (steps: number) => {
-    if (Platform.OS === "web") {
-      const sanitized = Math.max(0, Math.round(steps));
-      setActivitySummary((prev) => ({ ...prev, steps: sanitized }));
-      setTodayLog((prev) => ({ ...prev, steps: sanitized }));
+    const sanitized = Math.max(0, Math.round(steps));
+    const snapshot = await logManualStepsTracker(sanitized);
+    const summary = snapshotToSummary(snapshot, sleepHours);
+
+    setActivitySummary(summary);
+    setTodayLog((prev) => {
+      const today = getToday();
+      if (prev.date !== today) return { ...emptyLog(today), steps: summary.steps };
+      return { ...prev, steps: summary.steps };
+    });
+
+    if (!tokenRef.current) {
+      requireAuth();
       return;
     }
-    const snapshot = await logManualStepsTracker(steps);
-    applyStepSnapshot(snapshot);
+
+    try {
+      if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+      await syncActivityToServer(tokenRef.current, summary, getToday(), "manual");
+      setSyncError(null);
+      setLastSyncedAt(new Date().toISOString());
+    } catch (err: any) {
+      setSyncError(err.message);
+      throw err;
+    }
   };
 
   const connectDevice = async (deviceId: string) => {
@@ -641,6 +696,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         refreshDailyData,
         setStepGoal,
         logManualSteps,
+        syncActivityNow,
         bmi,
         weeklyCalories,
       }}

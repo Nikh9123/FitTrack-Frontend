@@ -44,7 +44,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MetricBig from "./components/MetricBig";
 import AnalysisSection from "./components/AnalysisSection";
-import { parseGeminiAnalysis, getRating, safeNum, formatControl } from "@/lib/inbody/helpers";
+import { normalizeGeminiAnalysis, needsInbodyAiAnalysis, getRating, safeNum, formatControl } from "@/lib/inbody/helpers";
 import type { GeminiAnalysis, ExtractedMetrics, Phase, PlanType, SelectedFile } from "@/lib/inbody/types";
 
 
@@ -76,6 +76,7 @@ export default function InBodyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [currentReportId, setCurrentReportId] = useState<string | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
+  const [analyzingAi, setAnalyzingAi] = useState(false);
 
   // ── Delete report state ───────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<InBodyReport | null>(null);
@@ -227,15 +228,15 @@ export default function InBodyScreen() {
       setMetrics(response.extractedMetrics as ExtractedMetrics);
       setCurrentReportId(response.reportId);
 
-      const uploadedAnalysis = parseGeminiAnalysis(response.geminiAnalysis);
-      if (uploadedAnalysis) {
+      const uploadedAnalysis = normalizeGeminiAnalysis(response.geminiAnalysis);
+      if (uploadedAnalysis && !needsInbodyAiAnalysis(response.geminiAnalysis)) {
         console.log("🤖 Gemini analysis received in upload response");
         setGeminiAnalysis(uploadedAnalysis);
       } else {
-        console.log("⏳ No Gemini analysis in upload response. Fetching separately...");
+        console.log("⏳ Running full AI analysis...");
         try {
           const analysisResult = await analyzeInbodyReport(response.reportId, token);
-          const analysisData = parseGeminiAnalysis(analysisResult.analysis);
+          const analysisData = normalizeGeminiAnalysis(analysisResult.analysis);
 
           if (analysisData) {
             console.log("🤖 Gemini analysis fetched from analyze endpoint");
@@ -246,6 +247,7 @@ export default function InBodyScreen() {
         } catch (analyzeErr: any) {
           console.error("❌ Gemini analysis failed:", analyzeErr?.message ?? analyzeErr);
           setError(`AI Analysis unavailable: ${analyzeErr?.message ?? "Unknown error"}. Showing extracted metrics only.`);
+          if (uploadedAnalysis) setGeminiAnalysis(uploadedAnalysis);
         }
       }
 
@@ -273,8 +275,12 @@ export default function InBodyScreen() {
       setMetrics(response.extractedMetrics as ExtractedMetrics);
       setCurrentReportId(response.reportId);
       setIsEstimated(true);
-      const analysis = parseGeminiAnalysis(response.geminiAnalysis);
-      if (analysis) setGeminiAnalysis(analysis);
+      const analysis = normalizeGeminiAnalysis(response.geminiAnalysis);
+      if (analysis && !needsInbodyAiAnalysis(response.geminiAnalysis)) {
+        setGeminiAnalysis(analysis);
+      } else {
+        await runAiAnalysis(response.reportId);
+      }
       setPhase("results");
       setTimeout(() => setShowSmartPopup(true), 600);
       refresh();
@@ -332,6 +338,26 @@ export default function InBodyScreen() {
     opacity: toastOpacity.value,
   }));
 
+  const runAiAnalysis = useCallback(
+    async (reportId: string) => {
+      if (!token) return null;
+      setAnalyzingAi(true);
+      try {
+        const result = await analyzeInbodyReport(reportId, token);
+        const analysis = normalizeGeminiAnalysis(result.analysis);
+        setGeminiAnalysis(analysis);
+        return analysis;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "AI analysis failed";
+        Alert.alert("AI analysis failed", message);
+        return null;
+      } finally {
+        setAnalyzingAi(false);
+      }
+    },
+    [token],
+  );
+
   const handleOpenReport = useCallback(async (report: InBodyReport) => {
     if (!token) return;
     setLoadingReport(true);
@@ -339,8 +365,6 @@ export default function InBodyScreen() {
       const full = await getInbodyReport(report.id, token);
       const m = full.extractedMetrics as ExtractedMetrics | undefined;
       setMetrics(m ?? null);
-      const parsed = parseGeminiAnalysis(full.geminiAnalysis);
-      setGeminiAnalysis(parsed);
       setCurrentReportId(full.id);
       setSelectedFile(null);
       setIsEstimated(
@@ -349,13 +373,21 @@ export default function InBodyScreen() {
       );
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setPhase("results");
+
+      if (needsInbodyAiAnalysis(full.geminiAnalysis) && m) {
+        setGeminiAnalysis(null);
+        await runAiAnalysis(full.id);
+      } else {
+        setGeminiAnalysis(normalizeGeminiAnalysis(full.geminiAnalysis));
+      }
+
       setTimeout(() => setShowSmartPopup(true), 600);
     } catch (err: any) {
       Alert.alert("Error", err?.message ?? "Failed to load report. Please try again.");
     } finally {
       setLoadingReport(false);
     }
-  }, [token]);
+  }, [token, runAiAnalysis]);
 
   // Use the actual InBody score from the report if available; otherwise estimate
   const bodyScore = metrics
@@ -497,7 +529,7 @@ export default function InBodyScreen() {
                 <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>My Reports</Text>
               </View>
             </View>
-            {reports.slice(0, 3).map((r) => (
+            {(reports ?? []).slice(0, 3).map((r) => (
               <ReportCard key={r.id} report={r} onPress={handleOpenReport} onDelete={() => setDeleteTarget(r)} />
             ))}
           </>
@@ -1017,7 +1049,18 @@ export default function InBodyScreen() {
               </GlassCard>
             )}
             {/* AI Summary */}
-            {geminiAnalysis && (
+            {analyzingAi ? (
+              <GlassCard style={[styles.summaryCard, { alignItems: "center", paddingVertical: 28, gap: 12 }]}>
+                <ActivityIndicator size="large" color={colors.purple} />
+                <Text style={[colors.typography.bodyMedium, { color: colors.foreground }]}>
+                  Generating AI analysis…
+                </Text>
+                <Text style={[colors.typography.caption, { color: colors.mutedForeground, textAlign: "center" }]}>
+                  Groq is reviewing your body composition metrics and building personalized insights.
+                </Text>
+              </GlassCard>
+            ) : null}
+            {geminiAnalysis && !analyzingAi && (
               <>
                 <GlassCard style={styles.summaryCard}>
                   <LinearGradient
@@ -1048,6 +1091,20 @@ export default function InBodyScreen() {
                       {geminiAnalysis.__aiModel}
                     </Text>
                   )}
+                  {currentReportId && geminiAnalysis.__aiSource !== "groq" ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (currentReportId) void runAiAnalysis(currentReportId);
+                      }}
+                      style={[styles.regenAiBtn, { borderColor: colors.primary }]}
+                      disabled={analyzingAi}
+                    >
+                      <Ionicons name="sparkles" size={14} color={colors.primary} />
+                      <Text style={[colors.typography.caption, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
+                        Generate AI Analysis
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
 
                 {/* Strengths & Weaknesses */}
@@ -1739,7 +1796,17 @@ const styles = StyleSheet.create({
   summaryCard: { padding: 18, gap: 12, overflow: "hidden" },
   summaryHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   sparkleIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  aiSourceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 2 },
+  aiSourceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 2, flexWrap: "wrap" },
+  regenAiBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginLeft: "auto",
+  },
   aiDebugBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   swRow: { flexDirection: "row", gap: 10 },
   swCard: { flex: 1, padding: 14, gap: 8 },

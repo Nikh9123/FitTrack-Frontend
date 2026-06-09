@@ -15,7 +15,11 @@ export interface ActivitySyncPayload {
   rawPayload?: Record<string, unknown>;
 }
 
-function summaryToPayload(summary: ActivitySummary, summaryDate: string): ActivitySyncPayload {
+function summaryToPayload(
+  summary: ActivitySummary,
+  summaryDate: string,
+  source: "phone_sensors" | "manual" = "phone_sensors",
+): ActivitySyncPayload {
   return {
     summaryDate,
     steps: summary.steps,
@@ -23,7 +27,7 @@ function summaryToPayload(summary: ActivitySummary, summaryDate: string): Activi
     runningMinutes: summary.runningMinutes,
     caloriesBurned: summary.caloriesBurned,
     distanceMeters: Math.round(summary.distanceKm * 1000),
-    source: "phone_sensors",
+    source,
     rawPayload: {
       syncedFrom: "mobile",
       distanceKm: summary.distanceKm,
@@ -95,8 +99,9 @@ export async function syncActivityToServer(
   token: string,
   summary: ActivitySummary,
   summaryDate: string,
+  source: "phone_sensors" | "manual" = "phone_sensors",
 ): Promise<void> {
-  const payload = summaryToPayload(summary, summaryDate);
+  const payload = summaryToPayload(summary, summaryDate, source);
   try {
     await postActivitySync(token, payload);
     await flushSyncQueue(token);

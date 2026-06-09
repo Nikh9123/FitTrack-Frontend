@@ -1,14 +1,74 @@
+import { energyFromColor, withAlpha } from "@/constants/energy-glow";
 import { useColors } from "@/hooks/useColors";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import type { TrendPoint } from "@/hooks/useProgressAPI";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo } from "react";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect, useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 
 interface WeightSparklineProps {
   points: TrendPoint[];
   source: "manual" | "inbody" | "none";
   latestKg: number | null;
   onPress?: () => void;
+}
+
+function SparkBar({
+  height,
+  color,
+  isLast,
+  index,
+}: {
+  height: number;
+  color: string;
+  isLast: boolean;
+  index: number;
+}) {
+  const reduceMotion = useReducedMotion();
+  const energy = energyFromColor(color);
+  const h = useSharedValue(reduceMotion ? height : 8);
+  const pulse = useSharedValue(1);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      h.value = height;
+      return;
+    }
+    h.value = withDelay(index * 40, withSpring(height, { damping: 14, stiffness: 120 }));
+    if (isLast) {
+      pulse.value = withRepeat(
+        withSequence(withTiming(1.08, { duration: 1200 }), withTiming(1, { duration: 1200 })),
+        -1,
+      );
+    }
+  }, [height, index, isLast, h, pulse, reduceMotion]);
+
+  const barStyle = useAnimatedStyle(() => ({
+    height: h.value,
+    transform: [{ scale: isLast ? pulse.value : 1 }],
+  }));
+
+  return (
+    <Animated.View style={[styles.barOuter, barStyle]}>
+      <LinearGradient
+        colors={isLast ? [energy.primary, energy.secondary] : [withAlpha(energy.primary, 0.55), withAlpha(energy.secondary, 0.35)]}
+        start={{ x: 0, y: 1 }}
+        end={{ x: 0, y: 0 }}
+        style={styles.bar}
+      />
+      {isLast ? <View style={[styles.barGlow, { backgroundColor: withAlpha(energy.primary, 0.15) }]} /> : null}
+    </Animated.View>
+  );
 }
 
 export function WeightSparkline({ points, source, latestKg, onPress }: WeightSparklineProps) {
@@ -53,15 +113,7 @@ export function WeightSparkline({ points, source, latestKg, onPress }: WeightSpa
               const isLast = i === displayValues.length - 1;
               return (
                 <View key={`${i}-${v}`} style={styles.barWrap}>
-                  <View
-                    style={[
-                      styles.bar,
-                      {
-                        height: h,
-                        backgroundColor: isLast ? colors.primary : colors.primary + "55",
-                      },
-                    ]}
-                  />
+                  <SparkBar height={h} color={colors.primary} isLast={isLast} index={i} />
                 </View>
               );
             })}
@@ -126,7 +178,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   barWrap: { flex: 1, alignItems: "center", justifyContent: "flex-end", maxWidth: 28 },
-  bar: { width: "100%", borderRadius: 4, minHeight: 8 },
+  barOuter: { width: "100%", borderRadius: 999, overflow: "hidden", minHeight: 8 },
+  bar: { flex: 1, width: "100%", borderRadius: 999, minHeight: 8 },
+  barGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 999 },
   footer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   caption: { fontSize: 11, fontFamily: "Inter_400Regular" },
   diff: { fontSize: 12, fontFamily: "Inter_600SemiBold" },

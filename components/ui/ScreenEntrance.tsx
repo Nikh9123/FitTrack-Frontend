@@ -1,7 +1,8 @@
 import { screenEntrance } from "@/constants/animations";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import React from "react";
 import { StyleSheet, ViewStyle } from "react-native";
-import Animated from "react-native-reanimated";
+import Animated, { FadeIn } from "react-native-reanimated";
 
 interface ScreenEntranceProps {
   children: React.ReactNode;
@@ -11,8 +12,13 @@ interface ScreenEntranceProps {
 }
 
 export function ScreenEntrance({ children, style, index = 0 }: ScreenEntranceProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <Animated.View entering={screenEntrance(index)} style={[styles.flex, style]}>
+    <Animated.View
+      entering={reduceMotion ? FadeIn.duration(0) : screenEntrance(index)}
+      style={[styles.flex, style]}
+    >
       {children}
     </Animated.View>
   );

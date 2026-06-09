@@ -1,3 +1,4 @@
+import { withAlpha } from "@/constants/energy-glow";
 import { entranceFade } from "@/constants/animations";
 import React, { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -42,8 +43,19 @@ export function AnimatedStatCard({ label, value, icon, color, colors, index, pul
   return (
     <Animated.View
       entering={entranceFade(index + 5)}
-      style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+      style={[
+        styles.statCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          shadowColor: pulse ? color : "transparent",
+          shadowOpacity: pulse ? 0.14 : 0,
+          shadowRadius: pulse ? 8 : 0,
+          shadowOffset: { width: 0, height: 0 },
+        },
+      ]}
     >
+      <View style={[styles.statGlow, pulse ? { backgroundColor: withAlpha(color, 0.06) } : null]} />
       <Animated.View style={[styles.statIcon, { backgroundColor: color + "15" }, pulse ? iconStyle : undefined]}>
         <Ionicons name={icon} size={18} color={color} />
       </Animated.View>
@@ -61,6 +73,16 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 4,
     borderWidth: 1,
+    overflow: "hidden",
+    position: "relative",
+  },
+  statGlow: {
+    position: "absolute",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    top: 8,
+    left: 8,
   },
   statIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", marginBottom: 2 },
   statVal: { fontSize: 20, fontFamily: "Inter_700Bold" },

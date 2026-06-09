@@ -7,8 +7,8 @@ import type { HistoryDayBucket, HistoryInsightDto, HistoryPeriod } from "@/lib/p
 import { Ionicons } from "@expo/vector-icons";
 import { hapticSelection } from "@/lib/haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { entranceFade } from "@/constants/animations";
 import Animated from "react-native-reanimated";
 
@@ -49,6 +49,64 @@ function metricValue(bucket: HistoryDayBucket, metric: JournalMetric): number {
       return bucket.sleepHours;
     case "weight":
       return bucket.weightKg ?? 0;
+  }
+}
+
+function formatFullDate(dateKey: string): string {
+  const d = new Date(`${dateKey}T12:00:00`);
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function formatMetricDisplay(bucket: HistoryDayBucket, metric: JournalMetric): string {
+  switch (metric) {
+    case "steps":
+      return bucket.steps > 0 ? `${bucket.steps.toLocaleString()} steps` : "No steps logged";
+    case "calories":
+      return bucket.caloriesConsumed > 0
+        ? `${Math.round(bucket.caloriesConsumed).toLocaleString()} kcal eaten`
+        : "No meals logged";
+    case "water":
+      return bucket.waterGlasses > 0
+        ? `${bucket.waterGlasses} glass${bucket.waterGlasses === 1 ? "" : "es"} (${bucket.waterMl} ml)`
+        : "No water logged";
+    case "sleep":
+      return bucket.sleepHours > 0 ? `${bucket.sleepHours}h sleep` : "No sleep logged";
+    case "weight":
+      return bucket.weightKg != null ? `${bucket.weightKg.toFixed(1)} kg` : "No weight logged";
+  }
+}
+
+function formatBarValue(bucket: HistoryDayBucket, metric: JournalMetric): string {
+  switch (metric) {
+    case "steps":
+      return bucket.steps >= 1000 ? `${(bucket.steps / 1000).toFixed(1)}k` : String(bucket.steps);
+    case "calories":
+      return bucket.caloriesConsumed >= 1000
+        ? `${(bucket.caloriesConsumed / 1000).toFixed(1)}k`
+        : bucket.caloriesConsumed > 0
+          ? String(Math.round(bucket.caloriesConsumed))
+          : "—";
+    case "water":
+      return bucket.waterGlasses > 0 ? String(bucket.waterGlasses) : "—";
+    case "sleep":
+      return bucket.sleepHours > 0 ? `${bucket.sleepHours}h` : "—";
+    case "weight":
+      return bucket.weightKg != null ? bucket.weightKg.toFixed(1) : "—";
+  }
+}
+
+function hasMetricData(bucket: HistoryDayBucket, metric: JournalMetric): boolean {
+  switch (metric) {
+    case "steps":
+      return bucket.steps > 0;
+    case "calories":
+      return bucket.caloriesConsumed > 0;
+    case "water":
+      return bucket.waterGlasses > 0;
+    case "sleep":
+      return bucket.sleepHours > 0;
+    case "weight":
+      return bucket.weightKg != null;
   }
 }
 
@@ -98,10 +156,14 @@ export function FitnessJournal({
   lastSyncedAt,
 }: FitnessJournalProps) {
   const colors = useColors();
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const activeMeta = METRICS.find((m) => m.key === metric)!;
   const color = colors[activeMeta.colorKey];
 
-  const values = buckets.map((b) => metricValue(b, metric));
+  useEffect(() => {
+    setSelectedDate(null);
+  }, [metric, period, buckets]);
+
   const displayBuckets = buckets.length > 14 ? buckets.slice(-14) : buckets;
   const displayValues = displayBuckets.map((b) => metricValue(b, metric));
   const displayMax = Math.max(...displayValues, 1);
@@ -115,6 +177,14 @@ export function FitnessJournal({
     : `${metric}-${period}-${displayValues.join(",")}`;
 
   const metricInsights = insights.filter((ins) => insightMatchesMetric(ins, metric));
+  const selectedBucket = selectedDate ? displayBuckets.find((b) => b.date === selectedDate) : null;
+  const periodAverage = useMemo(() => {
+    const vals = displayBuckets
+      .map((b) => (metric === "weight" ? b.weightKg ?? 0 : metricValue(b, metric)))
+      .filter((v) => v > 0);
+    if (!vals.length) return 0;
+    return vals.reduce((sum, v) => sum + v, 0) / vals.length;
+  }, [displayBuckets, metric]);
 
   return (
     <Animated.View entering={entranceFade(2)} style={styles.outer}>
@@ -207,43 +277,116 @@ export function FitnessJournal({
                 <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>{activeMeta.emptyHint}</Text>
               </View>
             ) : (
-              <View style={styles.barsRow}>
-                {displayValues.map((v, i) => {
-                  const bucket = displayBuckets[i];
-                  const dayLabel = bucket.date.slice(5);
-                  const hasWeight = metric === "weight" && bucket.weightKg != null;
-                  const barValue = metric === "weight" ? (bucket.weightKg ?? 0) : v;
+              <>
+                <View style={styles.barsRow}>
+                  {displayValues.map((v, i) => {
+                    const bucket = displayBuckets[i];
+                    const dayLabel = bucket.date.slice(5);
+                    const hasWeight = metric === "weight" && bucket.weightKg != null;
+                    const barValue = metric === "weight" ? (bucket.weightKg ?? 0) : v;
+                    const isSelected = selectedDate === bucket.date;
+                    const showValue = isSelected || (metric === "weight" && hasWeight);
+                    const hasData = hasMetricData(bucket, metric);
 
-                  return (
-                    <View key={`${bucket.date}-${chartAnimKey}`} style={styles.barColWrap}>
-                      <View style={styles.barStack}>
-                        {metric === "weight" && hasWeight ? (
-                          <Text style={[styles.barValue, { color }]} numberOfLines={1}>
-                            {bucket.weightKg!.toFixed(1)}
-                          </Text>
-                        ) : (
-                          <View style={styles.barValueSpacer} />
-                        )}
-                        {metric === "weight" && !hasWeight ? (
-                          <View style={[styles.barEmptyTrack, { backgroundColor: colors.border }]} />
-                        ) : (
-                          <AnimatedHistoryBar
-                            value={barValue}
-                            max={displayMax}
-                            color={color}
-                            index={i}
-                            trackColor={colors.border}
-                            animKey={chartAnimKey}
-                          />
-                        )}
-                      </View>
-                      <Text style={[styles.barLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
-                        {dayLabel}
+                    return (
+                      <Pressable
+                        key={`${bucket.date}-${chartAnimKey}`}
+                        onPress={() => {
+                          void hapticSelection();
+                          setSelectedDate((prev) => (prev === bucket.date ? null : bucket.date));
+                        }}
+                        style={({ pressed }) => [
+                          styles.barColWrap,
+                          isSelected && { backgroundColor: color + "14", borderRadius: 10 },
+                          pressed && { opacity: 0.85 },
+                        ]}
+                      >
+                        <View style={styles.barStack}>
+                          {showValue ? (
+                            <Text
+                              style={[styles.barValue, { color: isSelected ? color : colors.mutedForeground }]}
+                              numberOfLines={1}
+                            >
+                              {formatBarValue(bucket, metric)}
+                            </Text>
+                          ) : (
+                            <View style={styles.barValueSpacer} />
+                          )}
+                          {metric === "weight" && !hasWeight ? (
+                            <View
+                              style={[
+                                styles.barEmptyTrack,
+                                { backgroundColor: colors.border },
+                                isSelected && { borderWidth: 1, borderColor: color },
+                              ]}
+                            />
+                          ) : (
+                            <AnimatedHistoryBar
+                              value={barValue}
+                              max={displayMax}
+                              color={color}
+                              index={i}
+                              trackColor={colors.border}
+                              animKey={chartAnimKey}
+                              highlighted={isSelected}
+                              dimmed={!hasData && !isSelected}
+                            />
+                          )}
+                        </View>
+                        <Text
+                          style={[
+                            styles.barLabel,
+                            { color: isSelected ? color : colors.mutedForeground },
+                            isSelected && { fontFamily: "Inter_700Bold" },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {dayLabel}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {selectedBucket ? (
+                  <View style={[styles.selectedDetail, { backgroundColor: color + "12", borderColor: color + "40" }]}>
+                    <Text style={[styles.selectedDate, { color: colors.foreground }]}>
+                      {formatFullDate(selectedBucket.date)}
+                    </Text>
+                    <Text style={[styles.selectedValue, { color }]}>
+                      {formatMetricDisplay(selectedBucket, metric)}
+                    </Text>
+                    {periodAverage > 0 ? (
+                      <Text style={[styles.selectedSub, { color: colors.mutedForeground }]}>
+                        {(() => {
+                          const current =
+                            metric === "weight"
+                              ? selectedBucket.weightKg ?? 0
+                              : metricValue(selectedBucket, metric);
+                          const diff = current - periodAverage;
+                          const pct = periodAverage > 0 ? (diff / periodAverage) * 100 : 0;
+                          const sign = diff >= 0 ? "+" : "";
+                          return `${sign}${Math.round(diff)} vs avg · ${sign}${pct.toFixed(0)}% trend`;
+                        })()}
                       </Text>
-                    </View>
-                  );
-                })}
-              </View>
+                    ) : null}
+                    {metric === "calories" && selectedBucket.proteinG > 0 ? (
+                      <Text style={[styles.selectedSub, { color: colors.mutedForeground }]}>
+                        {Math.round(selectedBucket.proteinG)}g protein
+                      </Text>
+                    ) : null}
+                    {metric === "steps" && selectedBucket.caloriesBurned > 0 ? (
+                      <Text style={[styles.selectedSub, { color: colors.mutedForeground }]}>
+                        {Math.round(selectedBucket.caloriesBurned).toLocaleString()} kcal burned
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : (
+                  <Text style={[styles.tapHint, { color: colors.mutedForeground }]}>
+                    Tap a bar to see that day's logged data
+                  </Text>
+                )}
+              </>
             )}
           </View>
         )}
@@ -296,11 +439,24 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", textAlign: "center" },
   emptyHint: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 17, paddingHorizontal: 12 },
   barsRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 3, paddingTop: 4 },
-  barColWrap: { flex: 1, alignItems: "center", gap: 6, minWidth: 0, maxWidth: 36 },
+  barColWrap: { flex: 1, alignItems: "center", gap: 6, minWidth: 0, maxWidth: 36, paddingVertical: 4, paddingHorizontal: 2 },
   barStack: { alignItems: "center", width: "100%" },
-  barValue: { fontSize: 8, fontFamily: "Inter_600SemiBold", height: 10, marginBottom: 2 },
+  barValue: { fontSize: 8, fontFamily: "Inter_700Bold", height: 10, marginBottom: 2 },
   barValueSpacer: { height: 10, marginBottom: 2 },
   barEmptyTrack: { height: 88, width: "80%", borderRadius: 6, opacity: 0.35 },
   barLabel: { fontSize: 9, fontFamily: "Inter_500Medium", marginTop: 2 },
+  tapHint: { fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 2 },
+  selectedDetail: {
+    marginTop: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    gap: 2,
+  },
+  selectedDate: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  selectedValue: { fontSize: 16, fontFamily: "Inter_700Bold", marginTop: 2 },
+  selectedSub: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   insightsBlock: { gap: 8 },
 });

@@ -1,8 +1,10 @@
 import { useColors } from "@/hooks/useColors";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { hapticLight } from "@/lib/haptics";
 import React, { useEffect } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
 import Animated, {
+  FadeInUp,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -16,6 +18,7 @@ interface GlassCardProps {
   shadowLevel?: "soft" | "medium" | "strong";
   /** Set false for cards that manage their own inner padding */
   padded?: boolean;
+  entranceIndex?: number;
 }
 
 function getShadow(level: "soft" | "medium" | "strong") {
@@ -25,7 +28,7 @@ function getShadow(level: "soft" | "medium" | "strong") {
       medium: "0 4px 16px rgba(0,0,0,0.10)",
       strong: "0 8px 24px rgba(0,0,0,0.14)",
     };
-    return { boxShadow: shadows[level] } as any;
+    return { boxShadow: shadows[level] } as ViewStyle;
   }
   const shadows = {
     soft: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
@@ -42,16 +45,26 @@ export function GlassCard({
   elevated,
   shadowLevel = "soft",
   padded = true,
+  entranceIndex = 0,
 }: GlassCardProps) {
   const colors = useColors();
-  const opacity = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
+  const translateY = useSharedValue(reduceMotion ? 0 : 8);
+  const opacity = useSharedValue(reduceMotion ? 1 : 0);
 
   useEffect(() => {
-    opacity.value = withTiming(1, { duration: 300 });
-  }, []);
+    if (reduceMotion) {
+      opacity.value = 1;
+      translateY.value = 0;
+      return;
+    }
+    opacity.value = withTiming(1, { duration: 360 });
+    translateY.value = withTiming(0, { duration: 380 });
+  }, [opacity, translateY, reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
   }));
 
   const shadowStyle = elevated ? getShadow(shadowLevel) : getShadow("soft");
@@ -68,9 +81,11 @@ export function GlassCard({
     style,
   ];
 
+  const entering = reduceMotion ? undefined : FadeInUp.delay(entranceIndex * 50).duration(340).springify().damping(20);
+
   if (onPress) {
     return (
-      <Animated.View style={animatedStyle}>
+      <Animated.View entering={entering} style={animatedStyle}>
         <TouchableOpacity
           onPress={() => {
             void hapticLight();
@@ -85,7 +100,11 @@ export function GlassCard({
     );
   }
 
-  return <Animated.View style={[animatedStyle, cardStyle]}>{children}</Animated.View>;
+  return (
+    <Animated.View entering={entering} style={[animatedStyle, cardStyle]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 const styles = StyleSheet.create({

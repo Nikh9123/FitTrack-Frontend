@@ -272,10 +272,14 @@ export async function fetchNutritionGoals(token: string) {
 }
 
 export async function logWeightApi(token: string, weightKg: number, notes?: string) {
-  return apiFetch<{ success: boolean }>(token, "/progress/weight", {
-    method: "POST",
-    body: JSON.stringify({ weightKg, notes }),
-  });
+  return apiFetch<{ success: boolean; newlyUnlocked?: import("@/lib/achievements-api").UnlockedAchievement[] }>(
+    token,
+    "/progress/weight",
+    {
+      method: "POST",
+      body: JSON.stringify({ weightKg, notes }),
+    },
+  );
 }
 
 export async function fetchTodayCheckin(token: string) {

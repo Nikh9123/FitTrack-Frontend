@@ -175,6 +175,23 @@ function startPedometerWatch() {
   });
 }
 
+async function resolveStepsForToday(osSteps: number | null): Promise<{ steps: number; source: StoredDailyActivity["source"] }> {
+  const stored = await loadDailyActivity();
+  if (stored.date !== getTodayDateKey()) {
+    if (osSteps !== null) return { steps: osSteps, source: "pedometer" };
+    return { steps: 0, source: "pedometer" };
+  }
+  if (stored.source === "manual") {
+    if (osSteps !== null && osSteps > stored.steps) {
+      return { steps: osSteps, source: "pedometer" };
+    }
+    return { steps: stored.steps, source: "manual" };
+  }
+  if (osSteps !== null) return { steps: osSteps, source: "pedometer" };
+  if (stored.steps > 0) return { steps: stored.steps, source: stored.source };
+  return { steps: 0, source: "pedometer" };
+}
+
 export async function refreshStepCount(requestPermission = false): Promise<StepTrackingSnapshot | null> {
   if (Platform.OS === "web") {
     currentStatus = "unavailable";
@@ -190,11 +207,12 @@ export async function refreshStepCount(requestPermission = false): Promise<StepT
     }
 
     const osSteps = await readPedometerStepsToday(requestPermission);
-    if (osSteps !== null) {
-      baselineSteps = osSteps;
+    const resolved = await resolveStepsForToday(osSteps);
+    if (osSteps !== null || resolved.steps > 0) {
+      baselineSteps = resolved.steps;
       sessionStepDelta = 0;
       currentStatus = currentStatus === "permission_denied" ? "permission_denied" : "active";
-      return persistSteps(osSteps, "pedometer");
+      return persistSteps(resolved.steps, resolved.source);
     }
 
     const stored = await loadDailyActivity();
@@ -226,12 +244,13 @@ export async function startStepTracking(options?: {
     currentDateKey = stored.date;
 
     const osSteps = await readPedometerStepsToday(requestPermission);
-    if (osSteps !== null) {
-      baselineSteps = osSteps;
+    const resolved = await resolveStepsForToday(osSteps);
+    if (osSteps !== null || (stored.source === "manual" && stored.steps > 0)) {
+      baselineSteps = resolved.steps;
       sessionStepDelta = 0;
       startPedometerWatch();
       currentStatus = "active";
-      await persistSteps(osSteps, "pedometer");
+      await persistSteps(resolved.steps, resolved.source);
       return currentStatus;
     }
 

@@ -1,3 +1,4 @@
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import React, { useEffect } from "react";
 import { StyleSheet, ViewStyle } from "react-native";
 import Animated, {
@@ -17,11 +18,12 @@ interface PulseGlowProps {
 }
 
 export function PulseGlow({ children, active = true, color, style }: PulseGlowProps) {
+  const reduceMotion = useReducedMotion();
   const glow = useSharedValue(0);
 
   useEffect(() => {
-    if (!active) {
-      glow.value = 0;
+    if (!active || reduceMotion) {
+      glow.value = active ? 0.5 : 0;
       return;
     }
     glow.value = withRepeat(
@@ -31,10 +33,10 @@ export function PulseGlow({ children, active = true, color, style }: PulseGlowPr
       ),
       -1,
     );
-  }, [active, glow]);
+  }, [active, reduceMotion, glow]);
 
   const glowStyle = useAnimatedStyle(() => ({
-    shadowOpacity: 0.2 + glow.value * 0.45,
+    shadowOpacity: 0.12 + glow.value * 0.28,
     borderColor: color,
   }));
 

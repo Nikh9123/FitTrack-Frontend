@@ -1,3 +1,4 @@
+import { DailyCoachTipCard } from "@/components/coach/DailyCoachTipCard";
 import {
   ActivityTimeline,
   buildTodayTimeline,
@@ -13,9 +14,9 @@ import {
 import { DailyRingsSkeleton, WeightSparklineSkeleton } from "@/components/skeletons/HomeSkeletons";
 import { ScreenEntrance } from "@/components/ui/ScreenEntrance";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { InsightCard } from "@/components/ui/InsightCard";
 import { StreakBadge } from "@/components/ui/StreakBadge";
 import { entranceFade } from "@/constants/animations";
+import { useAchievementUnlocks } from "@/context/AchievementUnlockContext";
 import { useAuth } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
 import { useBottomTabPadding } from "@/hooks/useBottomTabPadding";
@@ -52,7 +53,8 @@ export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const bottomPad = useBottomTabPadding();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const { queueUnlocks } = useAchievementUnlocks();
   const {
     todayLog,
     calorieGoal,
@@ -126,15 +128,6 @@ export default function HomeScreen() {
   const carbs = todayLog.meals.reduce((s, m) => s + m.carbs, 0);
   const fat = todayLog.meals.reduce((s, m) => s + m.fat, 0);
 
-  const fitnessTip = useMemo(() => {
-    if (activitySummary.steps >= stepGoal) return "Step goal crushed — keep the momentum!";
-    if (activitySummary.steps >= 5000)
-      return `${(stepGoal - activitySummary.steps).toLocaleString()} steps to hit your goal today.`;
-    if (todayLog.water < waterGoal) return `${waterGoal - todayLog.water} glasses of water to go.`;
-    if (caloriesRemaining > 0) return `${caloriesRemaining} kcal left in your budget.`;
-    return "Log a meal or start a workout to build your day.";
-  }, [activitySummary.steps, todayLog.water, waterGoal, caloriesRemaining, stepGoal]);
-
   const timelineEvents = useMemo(
     () =>
       buildTodayTimeline({
@@ -174,7 +167,8 @@ export default function HomeScreen() {
       return;
     }
     try {
-      await logWeight(w);
+      const unlocked = await logWeight(w);
+      if (unlocked.length) queueUnlocks(unlocked);
       setWeightInput("");
       setShowWeightModal(false);
       await refreshHome();
@@ -296,6 +290,10 @@ export default function HomeScreen() {
           </View>
         </AnimatedSection>
 
+        <AnimatedSection index={1}>
+          <DailyCoachTipCard token={token} />
+        </AnimatedSection>
+
         {showStepPermissionBanner && (
           <GlassCard style={[styles.alertCard, { borderColor: colors.primary + "30" }]}>
             <Ionicons name="footsteps-outline" size={18} color={colors.primary} />
@@ -314,7 +312,7 @@ export default function HomeScreen() {
           </GlassCard>
         )}
 
-        <AnimatedSection index={1}>
+        <AnimatedSection index={2}>
           <QuickActionsRow
             actions={[
               { icon: "restaurant", label: "Meal", onPress: () => router.push("/(tabs)/diet") },
@@ -340,7 +338,7 @@ export default function HomeScreen() {
         </AnimatedSection>
 
         {(syncError || nutritionError) && (
-          <AnimatedSection index={2}>
+          <AnimatedSection index={3}>
             <GlassCard style={[styles.alertCard, { borderColor: colors.error + "40" }]}>
               <Ionicons name="warning-outline" size={18} color={colors.error} />
               <Text style={[colors.typography.caption, { color: colors.error, flex: 1 }]}>
@@ -350,7 +348,7 @@ export default function HomeScreen() {
           </AnimatedSection>
         )}
 
-        <AnimatedSection index={3}>
+        <AnimatedSection index={4}>
           <DailyScoreRing
             score={dailyScore}
             breakdown={scoreBreakdown}
@@ -359,7 +357,7 @@ export default function HomeScreen() {
           />
         </AnimatedSection>
 
-        <AnimatedSection index={4}>
+        <AnimatedSection index={5}>
           <GlassCard padded={false} style={{ padding: 12 }}>
             {isLoadingNutrition ? (
               <DailyRingsSkeleton />
@@ -381,10 +379,6 @@ export default function HomeScreen() {
               />
             )}
           </GlassCard>
-        </AnimatedSection>
-
-        <AnimatedSection index={5}>
-          <InsightCard message={fitnessTip} variant="motivation" compact />
         </AnimatedSection>
 
         <AnimatedSection index={6}>
