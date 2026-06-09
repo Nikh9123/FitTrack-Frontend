@@ -36,6 +36,7 @@ import {
   backfillRecentDays,
   getStepTrackingSnapshot,
   handleAppForeground,
+  logManualSteps as logManualStepsTracker,
   refreshStepCount,
   requestStepPermissions,
   startStepTracking,
@@ -148,6 +149,7 @@ interface FitnessContextType {
   refreshActivity: () => Promise<void>;
   refreshDailyData: () => Promise<void>;
   setStepGoal: (goal: number) => Promise<void>;
+  logManualSteps: (steps: number) => Promise<void>;
   bmi: number;
 }
 
@@ -553,6 +555,17 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const logManualSteps = async (steps: number) => {
+    if (Platform.OS === "web") {
+      const sanitized = Math.max(0, Math.round(steps));
+      setActivitySummary((prev) => ({ ...prev, steps: sanitized }));
+      setTodayLog((prev) => ({ ...prev, steps: sanitized }));
+      return;
+    }
+    const snapshot = await logManualStepsTracker(steps);
+    applyStepSnapshot(snapshot);
+  };
+
   const connectDevice = async (deviceId: string) => {
     const now = new Date().toISOString();
 
@@ -627,6 +640,7 @@ export function FitnessProvider({ children }: { children: React.ReactNode }) {
         refreshActivity,
         refreshDailyData,
         setStepGoal,
+        logManualSteps,
         bmi,
         weeklyCalories,
       }}

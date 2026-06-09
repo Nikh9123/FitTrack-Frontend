@@ -1,6 +1,7 @@
 import {
   ActivityTimeline,
   buildTodayTimeline,
+  DailyMetricLogModal,
   DailyRingsRow,
   DailyScoreRing,
   FloatingAmbient,
@@ -62,8 +63,11 @@ export default function HomeScreen() {
     refreshDailyData,
     addWater,
     logWeight,
+    addMeal,
+    logManualSteps,
     stepGoal,
     setStepGoal,
+    stepTrackingStatus,
     syncError,
     nutritionError,
     isLoadingNutrition,
@@ -78,6 +82,9 @@ export default function HomeScreen() {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [showStepGoalModal, setShowStepGoalModal] = useState(false);
   const [stepGoalInput, setStepGoalInput] = useState("");
+  const [showStepsLogModal, setShowStepsLogModal] = useState(false);
+  const [showCaloriesLogModal, setShowCaloriesLogModal] = useState(false);
+  const [metricLogSaving, setMetricLogSaving] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "U";
@@ -198,6 +205,64 @@ export default function HomeScreen() {
     router.push(path as any);
   };
 
+  const openStepsLog = () => {
+    void hapticLight();
+    setShowStepsLogModal(true);
+  };
+
+  const openCaloriesLog = () => {
+    void hapticLight();
+    setShowCaloriesLogModal(true);
+  };
+
+  const handleSaveManualSteps = async (steps: number) => {
+    setMetricLogSaving(true);
+    try {
+      await logManualSteps(steps);
+      setShowStepsLogModal(false);
+      await hapticSuccess();
+    } catch {
+      Alert.alert("Could not save", "Try again in a moment.");
+    } finally {
+      setMetricLogSaving(false);
+    }
+  };
+
+  const handleSaveManualCalories = async (calories: number, label?: string) => {
+    setMetricLogSaving(true);
+    try {
+      await addMeal({
+        name: label || "Manual entry",
+        type: "snack",
+        calories,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      });
+      setShowCaloriesLogModal(false);
+      await hapticSuccess();
+    } catch {
+      // surfaced via nutritionError
+    } finally {
+      setMetricLogSaving(false);
+    }
+  };
+
+  const handleStepsAlternative = async () => {
+    setShowStepsLogModal(false);
+    if (stepTrackingStatus === "active") {
+      await refreshActivity();
+      Alert.alert("Phone tracking", "Your steps are being counted automatically.");
+      return;
+    }
+    await enableStepTracking();
+  };
+
+  const handleCaloriesAlternative = () => {
+    setShowCaloriesLogModal(false);
+    router.push({ pathname: "/(tabs)/diet", params: { action: "add" } });
+  };
+
   return (
     <ScreenEntrance style={[styles.container, { backgroundColor: colors.background }]}>
       <FloatingAmbient />
@@ -306,8 +371,8 @@ export default function HomeScreen() {
                 calorieGoal={calorieGoal}
                 waterGlasses={todayLog.water}
                 waterGoal={waterGoal}
-                onStepsPress={() => goMetric(METRIC_ROUTES.steps)}
-                onCaloriesPress={() => goMetric(METRIC_ROUTES.calories)}
+                onStepsPress={openStepsLog}
+                onCaloriesPress={openCaloriesLog}
                 onWaterPress={() => goMetric(METRIC_ROUTES.water)}
                 onStepGoalPress={() => {
                   setStepGoalInput(String(stepGoal));
@@ -336,7 +401,7 @@ export default function HomeScreen() {
             protein={protein}
             carbs={carbs}
             fat={fat}
-            onCaloriesPress={() => goMetric(METRIC_ROUTES.calories)}
+            onCaloriesPress={openCaloriesLog}
             onSleepPress={() => goMetric(METRIC_ROUTES.sleep)}
             onProteinPress={() => goMetric(METRIC_ROUTES.nutrition("protein"))}
             onCarbsPress={() => goMetric(METRIC_ROUTES.nutrition("carbs"))}
@@ -448,6 +513,34 @@ export default function HomeScreen() {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      <DailyMetricLogModal
+        visible={showStepsLogModal}
+        variant="steps"
+        currentValue={activitySummary.steps}
+        saving={metricLogSaving}
+        onClose={() => setShowStepsLogModal(false)}
+        onSaveManual={handleSaveManualSteps}
+        onAlternative={() => void handleStepsAlternative()}
+        onViewDetails={() => {
+          setShowStepsLogModal(false);
+          goMetric(METRIC_ROUTES.steps);
+        }}
+      />
+
+      <DailyMetricLogModal
+        visible={showCaloriesLogModal}
+        variant="calories"
+        currentValue={todayLog.calories}
+        saving={metricLogSaving}
+        onClose={() => setShowCaloriesLogModal(false)}
+        onSaveManual={handleSaveManualCalories}
+        onAlternative={handleCaloriesAlternative}
+        onViewDetails={() => {
+          setShowCaloriesLogModal(false);
+          goMetric(METRIC_ROUTES.calories);
+        }}
+      />
     </ScreenEntrance>
   );
 }

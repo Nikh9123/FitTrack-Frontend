@@ -288,6 +288,14 @@ export function handleAppForeground(): Promise<StepTrackingSnapshot | null> {
   return refreshStepCount();
 }
 
+/** Set today's step count manually (overrides auto tracking until refreshed). */
+export async function logManualSteps(steps: number): Promise<StepTrackingSnapshot> {
+  const sanitized = Math.max(0, Math.round(steps));
+  baselineSteps = sanitized;
+  sessionStepDelta = 0;
+  return persistSteps(sanitized, "manual");
+}
+
 export async function getStepsForDate(dateKey: string): Promise<number | null> {
   if (Platform.OS === "web") return null;
 

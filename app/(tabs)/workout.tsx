@@ -444,7 +444,7 @@ export default function WorkoutScreen() {
     };
   }, [token, activeCategory]);
 
-  const handleOnboardingComplete = async (plan: any[], goal: string, _strategy: any) => {
+  const handleOnboardingComplete = async (plan: any[], goal: string, _strategy: any, _workoutLocation?: "gym" | "home") => {
     setPlanSaving(true);
     setDynamicPlan(plan);
     setActiveGoal(goal);

@@ -1,5 +1,6 @@
 export { ActivityTimeline, type TimelineEvent } from "./ActivityTimeline";
 export { buildTodayTimeline } from "./build-today-timeline";
+export { DailyMetricLogModal, type DailyMetricLogVariant } from "./DailyMetricLogModal";
 export { DailyRingsRow } from "./DailyRingsRow";
 export { DailyScoreRing, type ScoreBreakdownItem } from "./DailyScoreRing";
 export { FloatingAmbient } from "./FloatingAmbient";

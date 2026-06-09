@@ -43,6 +43,8 @@ type FitnessGoal =
 
 type Step = "goal" | "generating" | "plan-ready" | "saving";
 
+type WorkoutLocation = "gym" | "home";
+
 type PlanSource = "ai" | "trainer";
 
 interface UserMetricsSnapshot {
@@ -161,7 +163,7 @@ const DIFF_COLOR: Record<string, string> = {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface Props {
-  onComplete: (plan: PlanDay[], goal: FitnessGoal, strategy: WorkoutStrategy) => void | Promise<void>;
+  onComplete: (plan: PlanDay[], goal: FitnessGoal, strategy: WorkoutStrategy, workoutLocation?: WorkoutLocation) => void | Promise<void>;
   onSkip: () => void;
 }
 
@@ -173,6 +175,7 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
 
   const [step, setStep] = useState<Step>("goal");
   const [planSource, setPlanSource] = useState<PlanSource>("ai");
+  const [workoutLocation, setWorkoutLocation] = useState<WorkoutLocation>("gym");
   const [hasTrainerAssigned, setHasTrainerAssigned] = useState(false);
   const [trainerName, setTrainerName] = useState<string | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<FitnessGoal | null>(null);
@@ -295,6 +298,7 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
         goal: selectedGoal,
         useAiGoal: !selectedGoal,
         level: "beginner",
+        workoutLocation,
       });
 
       if (data.planSource === "trainer" || data.error?.includes("trainer")) {
@@ -333,12 +337,13 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
         aiRecommendedGoal: aiRecommendation?.recommendedGoal ?? null,
         workoutPlan: generatedPlan,
         strategy,
+        workoutLocation,
       });
       if (saveRes.error) {
         throw new Error(saveRes.error);
       }
 
-      await onComplete(generatedPlan, selectedGoal, strategy);
+      await onComplete(generatedPlan, selectedGoal, strategy, workoutLocation);
     } catch (err: unknown) {
       transition(() => setStep("plan-ready"));
       const msg = err instanceof Error ? err.message : "Could not save your plan. Please try again.";
@@ -362,6 +367,8 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
             topPad={topPad}
             insets={insets}
             selectedGoal={selectedGoal}
+            workoutLocation={workoutLocation}
+            onWorkoutLocationChange={setWorkoutLocation}
             planSource={planSource}
             hasTrainerAssigned={hasTrainerAssigned}
             trainerName={trainerName}
@@ -397,6 +404,7 @@ export default function AIWorkoutOnboarding({ onComplete, onSkip }: Props) {
             topPad={topPad}
             insets={insets}
             goal={selectedGoal!}
+            workoutLocation={workoutLocation}
             strategy={strategy}
             plan={generatedPlan}
             aiRecommendation={aiRecommendation}
@@ -421,6 +429,8 @@ function GoalStep({
   topPad,
   insets,
   selectedGoal,
+  workoutLocation,
+  onWorkoutLocationChange,
   planSource,
   hasTrainerAssigned,
   trainerName,
@@ -444,6 +454,37 @@ function GoalStep({
           Choose AI Coach or a trainer-assigned plan. One tap builds warm-up, 13 min cardio, 40 min strength, and stretch sections.
         </Text>
       </View>
+
+      <View style={[styles.locationRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {(["gym", "home"] as WorkoutLocation[]).map((loc) => {
+          const active = workoutLocation === loc;
+          return (
+            <TouchableOpacity
+              key={loc}
+              onPress={() => {
+                Haptics.selectionAsync();
+                onWorkoutLocationChange(loc);
+              }}
+              style={[
+                styles.locationChip,
+                active && { backgroundColor: colors.primary },
+              ]}
+            >
+              <Ionicons
+                name={loc === "gym" ? "barbell-outline" : "home-outline"}
+                size={16}
+                color={active ? colors.primaryForeground : colors.mutedForeground}
+              />
+              <Text style={[styles.locationChipText, { color: active ? colors.primaryForeground : colors.mutedForeground }]}>
+                {loc === "gym" ? "Gym" : "Home"}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={[styles.locationHint, { color: colors.mutedForeground }]}>
+        We'll pick exercises for your setup
+      </Text>
 
       <View style={styles.sourceRow}>
         {([
@@ -742,7 +783,7 @@ function AIMetaRow({ icon, label, value, color, colors }: any) {
 
 // ─── Plan Ready Step ──────────────────────────────────────────────────────────
 
-function PlanReadyStep({ colors, topPad, insets, goal, strategy, plan, aiRecommendation, metricsConsidered, expandedDay, expandedEx, onToggleDay, onToggleEx, onSave, onBack }: any) {
+function PlanReadyStep({ colors, topPad, insets, goal, workoutLocation, strategy, plan, aiRecommendation, metricsConsidered, expandedDay, expandedEx, onToggleDay, onToggleEx, onSave, onBack }: any) {
   const goalMeta = GOALS.find((g) => g.key === goal) ?? GOALS[0];
   const activeDays = plan.filter((d: PlanDay) => !d.isRest);
   const totalCals = activeDays.reduce((s: number, d: PlanDay) => s + d.estimatedCalories, 0);
@@ -763,10 +804,22 @@ function PlanReadyStep({ colors, topPad, insets, goal, strategy, plan, aiRecomme
             <Text style={[styles.sparkText, { color: goalMeta.color }]}>Plan Ready</Text>
           </View>
           <Text style={[styles.planTitle, { color: colors.foreground }]}>{planDisplayTitle(goal, strategy)}</Text>
-          <Text style={[styles.planSubtitle, { color: colors.mutedForeground }]}>
-            {strategy.splitName !== planDisplayTitle(goal, strategy) ? `${strategy.splitName} · ` : ""}
-            for {goal} · {totalExercises} exercises/week
-          </Text>
+          <View style={styles.planSubtitleRow}>
+            <Text style={[styles.planSubtitle, { color: colors.mutedForeground }]}>
+              {strategy.splitName !== planDisplayTitle(goal, strategy) ? `${strategy.splitName} · ` : ""}
+              for {goal} · {totalExercises} exercises/week
+            </Text>
+            <View style={[styles.locationPill, { backgroundColor: colors.primary + "18" }]}>
+              <Ionicons
+                name={workoutLocation === "gym" ? "barbell-outline" : "home-outline"}
+                size={12}
+                color={colors.primary}
+              />
+              <Text style={[styles.locationPillText, { color: colors.primary }]}>
+                {workoutLocation === "gym" ? "Gym" : "Home"}
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
 
@@ -1054,6 +1107,25 @@ const styles = StyleSheet.create({
   onboardingSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 22 },
 
   goalGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  locationRow: {
+    flexDirection: "row",
+    gap: 10,
+    padding: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  locationChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  locationChipText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  locationHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 16, textAlign: "center" },
   sourceRow: { flexDirection: "row", gap: 10 },
   sourceCard: { flex: 1, borderRadius: 14, padding: 12, gap: 4, alignItems: "flex-start" },
   metricsPanel: { borderRadius: 14, padding: 14, gap: 10, borderWidth: 1, marginBottom: 12 },
@@ -1111,7 +1183,17 @@ const styles = StyleSheet.create({
   planHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   backBtn: { paddingTop: 4 },
   planTitle: { fontSize: 22, fontFamily: "Inter_700Bold", letterSpacing: -0.3 },
-  planSubtitle: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
+  planSubtitleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 2 },
+  planSubtitle: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  locationPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  locationPillText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
 
   strategyCard: { borderRadius: 18, padding: 16, overflow: "hidden", gap: 12 },
   strategyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
