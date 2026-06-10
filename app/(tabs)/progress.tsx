@@ -25,10 +25,15 @@ import {
   type HistoryPeriod,
 } from "@/lib/progress-history-api";
 import {
+  BANNER_PERIOD_OPTIONS,
+  ESTIMATED_WEIGHT_INFO,
+  fetchAllBannerWeightChanges,
   fetchWeightChange,
   filterTrendByPeriod,
+  formatBannerWeightChange,
   formatWeightChangeMessage,
   PERIOD_LABELS,
+  type BannerWeightChangeMap,
   type WeightChangeDto,
   type WeightChangePeriod,
 } from "@/lib/progress-weight-api";
@@ -37,10 +42,11 @@ import { hapticLight, hapticMedium, hapticSelection, hapticSuccess } from "@/lib
 import { fetchWeeklyReview, isWeeklyReviewNew, type WeeklyReview } from "@/lib/coach-api";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -232,6 +238,11 @@ export default function ProgressScreen() {
   const [weightChartSource, setWeightChartSource] = useState<WeightChartSource>("inbody");
   const [period, setPeriod] = useState<WeightChangePeriod>("1w");
   const [weightChange, setWeightChange] = useState<WeightChangeDto | null>(null);
+  const [bannerPeriod, setBannerPeriod] = useState<WeightChangePeriod>("1d");
+  const [bannerWeightByPeriod, setBannerWeightByPeriod] = useState<BannerWeightChangeMap>({});
+  const [bannerPrefetching, setBannerPrefetching] = useState(false);
+  const [estimateInfoOpen, setEstimateInfoOpen] = useState(false);
+  const bannerPrefetchedRef = useRef(false);
   const [checkinVisible, setCheckinVisible] = useState(false);
   const [insightsExpanded, setInsightsExpanded] = useState(false);
 
@@ -275,6 +286,20 @@ export default function ProgressScreen() {
   const hasInsights = aiInsights.insights.length > 0;
   const hasAnyData = hasWeightData || hasInbodyData || dashboard.workoutStats.streak > 0;
 
+  const prefetchBannerWeightChanges = useCallback(async () => {
+    if (!token) return;
+    if (!bannerPrefetchedRef.current) setBannerPrefetching(true);
+    try {
+      const map = await fetchAllBannerWeightChanges(token, "scale");
+      setBannerWeightByPeriod((prev) => ({ ...prev, ...map }));
+      bannerPrefetchedRef.current = true;
+    } catch {
+      // Keep cached period values on refresh failure
+    } finally {
+      setBannerPrefetching(false);
+    }
+  }, [token]);
+
   useFocusEffect(
     useCallback(() => {
       refreshDashboard();
@@ -292,8 +317,9 @@ export default function ProgressScreen() {
             setWeeklyReview(null);
           }
         }
+        await prefetchBannerWeightChanges();
       })();
-    }, [refreshDashboard, syncActivityNow, loadJournal, refreshAchievements, evaluate, queueUnlocks, token]),
+    }, [refreshDashboard, syncActivityNow, loadJournal, refreshAchievements, evaluate, queueUnlocks, token, prefetchBannerWeightChanges]),
   );
 
   useEffect(() => {
@@ -373,6 +399,9 @@ export default function ProgressScreen() {
   const diff         = latestVal != null && prevVal != null ? latestVal - prevVal : null;
   const diffStr      = diff != null ? `${diff >= 0 ? "+" : ""}${diff.toFixed(chartMode === "calories" ? 0 : 1)} ${active.unit}` : null;
   const weightChangeMsg = formatWeightChangeMessage(weightChange);
+  const bannerWeightChange = bannerWeightByPeriod[bannerPeriod] ?? null;
+  const bannerWeightMsg = formatBannerWeightChange(bannerWeightChange, bannerPeriod);
+  const showBannerCalculating = bannerPrefetching && !bannerWeightChange;
   const isWeightLost    = weightChange?.direction === "lost";
   const isWeightGained  = weightChange?.direction === "gained";
   const isGoodChange = chartMode === "weight"
@@ -433,6 +462,80 @@ export default function ProgressScreen() {
                 <Text style={[styles.streakText, { color: colors.primary }]}>{currentStreak}d streak</Text>
               </View>
             )}
+          </View>
+        </View>
+
+        {/* ── Weight change banner (logged or estimated) ── */}
+        <View style={[styles.weightChangeBanner, { backgroundColor: colors.card, borderColor: colors.border, ...colors.shadow.soft }]}>
+          <View style={styles.weightChangeBannerTop}>
+            <View style={[styles.weightChangeIcon, { backgroundColor: colors.primary + "15" }]}>
+              <Ionicons
+                name={
+                  bannerWeightChange?.direction === "lost"
+                    ? "trending-down"
+                    : bannerWeightChange?.direction === "gained"
+                      ? "trending-up"
+                      : "scale-outline"
+                }
+                size={18}
+                color={colors.primary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.weightChangeMsgRow}>
+                <Text style={[styles.weightChangeBannerText, { color: colors.foreground }]}>
+                  {showBannerCalculating ? "Calculating…" : bannerWeightMsg}
+                </Text>
+                {bannerWeightChange?.isEstimated ? (
+                  <View style={[styles.estimatedChip, { backgroundColor: colors.primary + "18" }]}>
+                    <Text style={[styles.estimatedChipText, { color: colors.primary }]}>Estimated</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+            {bannerWeightChange?.isEstimated ? (
+              <TouchableOpacity
+                onPress={() => {
+                  void hapticLight();
+                  setEstimateInfoOpen(true);
+                }}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Estimated weight change info"
+              >
+                <Ionicons name="information-circle-outline" size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          <View style={styles.bannerPeriodRow}>
+            {BANNER_PERIOD_OPTIONS.map((opt) => {
+              const active = bannerPeriod === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => {
+                    void hapticSelection();
+                    setBannerPeriod(opt.key);
+                  }}
+                  style={[
+                    styles.bannerPeriodBtn,
+                    {
+                      backgroundColor: active ? colors.primary : colors.muted,
+                      borderColor: active ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.bannerPeriodText,
+                      { color: active ? colors.primaryForeground : colors.mutedForeground },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
@@ -963,6 +1066,28 @@ export default function ProgressScreen() {
         hasCheckedIn={hasCheckedIn}
         existingCheckin={dashboard.recentCheckin}
       />
+
+      {/* ── Estimated weight disclaimer ── */}
+      <Modal
+        visible={estimateInfoOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEstimateInfoOpen(false)}
+      >
+        <View style={styles.estimateInfoOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEstimateInfoOpen(false)} />
+          <View style={[styles.estimateInfoCard, { backgroundColor: colors.card }]}>
+            <Text style={[styles.estimateInfoTitle, { color: colors.foreground }]}>Estimated weight change</Text>
+            <Text style={[styles.estimateInfoBody, { color: colors.mutedForeground }]}>{ESTIMATED_WEIGHT_INFO}</Text>
+            <TouchableOpacity
+              onPress={() => setEstimateInfoOpen(false)}
+              style={[styles.estimateInfoBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.estimateInfoBtnText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
     </ScreenEntrance>
   );
@@ -1154,6 +1279,42 @@ const styles = StyleSheet.create({
   achieveHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
   journeyLink: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   journeyHint: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 8 },
+
+  weightChangeBanner: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 4,
+    gap: 12,
+  },
+  weightChangeBannerTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  weightChangeIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  weightChangeMsgRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
+  weightChangeBannerText: { fontSize: 14, fontFamily: "Inter_600SemiBold", flexShrink: 1 },
+  estimatedChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  estimatedChipText: { fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.3 },
+  bannerPeriodRow: { flexDirection: "row", gap: 6 },
+  bannerPeriodBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  bannerPeriodText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+
+  estimateInfoOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  estimateInfoCard: { borderRadius: 16, padding: 20, width: "100%", maxWidth: 340, gap: 12 },
+  estimateInfoTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  estimateInfoBody: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  estimateInfoBtn: { marginTop: 4, paddingVertical: 12, borderRadius: 12, alignItems: "center" },
+  estimateInfoBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
 
   weeklyReviewBanner: {
     flexDirection: "row",

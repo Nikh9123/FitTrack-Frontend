@@ -1,5 +1,5 @@
 import { Accelerometer, Pedometer } from "expo-sensors";
-import { Platform } from "react-native";
+import { PermissionsAndroid, Platform } from "react-native";
 import {
   deriveActivityMetrics,
   mergeCadenceIntoMetrics,
@@ -35,6 +35,8 @@ let cadenceWindowSteps = 0;
 let cadenceWindowStartedAt = Date.now();
 let currentStatus: StepTrackingStatus = "idle";
 let currentDateKey = getTodayDateKey();
+let androidPollInterval: ReturnType<typeof setInterval> | null = null;
+const ANDROID_POLL_MS = 45_000;
 const listeners = new Set<StepUpdateListener>();
 
 function notify(snapshot: StepTrackingSnapshot) {
@@ -88,10 +90,34 @@ export function subscribeStepUpdates(listener: StepUpdateListener): () => void {
   return () => listeners.delete(listener);
 }
 
+async function requestAndroidActivityRecognition(): Promise<boolean> {
+  if (Platform.OS !== "android") return true;
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+      {
+        title: "Activity recognition",
+        message: "Veera needs activity recognition to count your steps.",
+        buttonPositive: "Allow",
+        buttonNegative: "Deny",
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
 export async function requestStepPermissions(): Promise<boolean> {
   if (Platform.OS === "web") return false;
   try {
-    const permission = await Pedometer.requestPermissionsAsync();
+    let permission = await Pedometer.requestPermissionsAsync();
+    if (!permission.granted && Platform.OS === "android") {
+      const androidGranted = await requestAndroidActivityRecognition();
+      if (androidGranted) {
+        permission = await Pedometer.getPermissionsAsync();
+      }
+    }
     return permission.granted;
   } catch {
     return false;
@@ -105,6 +131,12 @@ async function readPedometerStepsToday(requestPermission = false): Promise<numbe
   let permission = await Pedometer.getPermissionsAsync();
   if (!permission.granted && requestPermission) {
     permission = await Pedometer.requestPermissionsAsync();
+    if (!permission.granted && Platform.OS === "android") {
+      const androidGranted = await requestAndroidActivityRecognition();
+      if (androidGranted) {
+        permission = await Pedometer.getPermissionsAsync();
+      }
+    }
   }
   if (!permission.granted) {
     if (requestPermission) {
@@ -175,6 +207,26 @@ function startPedometerWatch() {
   });
 }
 
+function startAndroidForegroundPolling() {
+  if (Platform.OS !== "android" || androidPollInterval) return;
+
+  androidPollInterval = setInterval(() => {
+    if (currentStatus !== "active") return;
+    void readPedometerStepsToday(false).then((steps) => {
+      if (steps !== null) {
+        void persistSteps(steps, "pedometer");
+      }
+    });
+  }, ANDROID_POLL_MS);
+}
+
+function stopAndroidForegroundPolling() {
+  if (androidPollInterval) {
+    clearInterval(androidPollInterval);
+    androidPollInterval = null;
+  }
+}
+
 async function resolveStepsForToday(osSteps: number | null): Promise<{ steps: number; source: StoredDailyActivity["source"] }> {
   const stored = await loadDailyActivity();
   if (stored.date !== getTodayDateKey()) {
@@ -212,6 +264,10 @@ export async function refreshStepCount(requestPermission = false): Promise<StepT
       baselineSteps = resolved.steps;
       sessionStepDelta = 0;
       currentStatus = currentStatus === "permission_denied" ? "permission_denied" : "active";
+      if (currentStatus === "active") {
+        startPedometerWatch();
+        startAndroidForegroundPolling();
+      }
       return persistSteps(resolved.steps, resolved.source);
     }
 
@@ -249,6 +305,7 @@ export async function startStepTracking(options?: {
       baselineSteps = resolved.steps;
       sessionStepDelta = 0;
       startPedometerWatch();
+      startAndroidForegroundPolling();
       currentStatus = "active";
       await persistSteps(resolved.steps, resolved.source);
       return currentStatus;
@@ -272,6 +329,7 @@ export async function startStepTracking(options?: {
     baselineSteps = stored.steps;
     sessionStepDelta = 0;
     startAccelerometerFallback();
+    startAndroidForegroundPolling();
     currentStatus = "active";
     if (stored.steps === 0) {
       await persistSteps(0, "accelerometer");
@@ -286,6 +344,7 @@ export async function startStepTracking(options?: {
 }
 
 export async function stopStepTracking(): Promise<void> {
+  stopAndroidForegroundPolling();
   pedometerSubscription?.remove();
   pedometerSubscription = null;
   accelerometerSubscription?.remove();

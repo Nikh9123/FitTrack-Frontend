@@ -17,6 +17,7 @@ export const STORAGE_KEYS = {
   dailyActivity: "@veera_daily_activity",
   reminderPrefs: "@veera_reminder_prefs",
   stepGoal: "@veera_step_goal",
+  profileAvatarLocal: "@veera_profile_avatar_local",
 } as const;
 
 /** Previous FitTrack AsyncStorage keys — read once when migrating local data. */
@@ -34,6 +35,7 @@ export const LEGACY_STORAGE_KEYS: Record<keyof typeof STORAGE_KEYS, string> = {
   dailyActivity: "@fittrack_daily_activity",
   reminderPrefs: "@fittrack_reminder_prefs",
   stepGoal: "@fittrack_step_goal",
+  profileAvatarLocal: "@fittrack_profile_avatar_local",
 };
 
 export const BACKGROUND_STEP_SYNC_TASK = "veera-background-step-sync";

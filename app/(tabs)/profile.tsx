@@ -1,6 +1,6 @@
 import { AchievementBadgeGrid, achievementToBadge } from "@/components/progress/AchievementBadgeGrid";
 import { APP_NAME } from "@/constants/branding";
-import { useAuth, type UserRole } from "@/context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 import { useFitness } from "@/context/FitnessContext";
 import { useTheme, type ThemeMode } from "@/context/ThemeContext";
 import { useAchievements } from "@/hooks/useAchievements";
@@ -27,7 +27,14 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AboutVeeraSheet } from "@/components/profile/AboutVeeraSheet";
+import { EditProfileSheet } from "@/components/profile/EditProfileSheet";
+import { HelpSupportSheet } from "@/components/profile/HelpSupportSheet";
+import { PrivacySecuritySheet } from "@/components/profile/PrivacySecuritySheet";
 import { ReminderSettingsSheet } from "@/components/profile/ReminderSettingsSheet";
+import { UpgradeMembershipSheet } from "@/components/profile/UpgradeMembershipSheet";
+import { loadLocalAvatarUri } from "@/lib/local-avatar";
+import { Image } from "expo-image";
 
 const ACHIEVEMENTS_STATIC_FALLBACK = [
   { icon: "flame" as const, label: "12-Day\nStreak", color: "#FF6B35" },
@@ -41,6 +48,7 @@ const MENU_ITEMS = [
   { icon: "person-outline" as const, label: "Edit Profile", sub: "Update your info" },
   { icon: "notifications-outline" as const, label: "Notifications", sub: "Push & email alerts" },
   { icon: "shield-checkmark-outline" as const, label: "Privacy & Security", sub: "Data & permissions" },
+  { icon: "diamond-outline" as const, label: "Upgrade Membership", sub: "Unlock premium features" },
   { icon: "help-circle-outline" as const, label: "Help & Support", sub: "FAQs and contact" },
   { icon: "information-circle-outline" as const, label: `About ${APP_NAME}`, sub: "Version 1.0.0" },
 ];
@@ -55,20 +63,31 @@ export default function ProfileScreen() {
   const colors = useColors();
   const { mode, setMode } = useTheme();
   const insets = useSafeAreaInsets();
-  const { user, logout, switchRole, refreshProfile } = useAuth();
+  const { user, logout, refreshProfile } = useAuth();
   const { recentWorkouts, bmi, streak, todayLog, refreshDailyData, refreshActivity } = useFitness();
   const { achievements, currentStage, totalPoints, refresh: refreshAchievements } = useAchievements();
   const [refreshing, setRefreshing] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
   const [devDateInfo, setDevDateInfo] = useState(getDailyRefreshDebugInfo);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const initials = user?.name?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) ?? "U";
 
+  const reloadAvatar = useCallback(() => {
+    void loadLocalAvatarUri().then(setLocalAvatarUri);
+  }, []);
+
   useEffect(() => {
     refreshProfile().catch(() => {});
     void refreshAchievements();
-  }, []);
+    reloadAvatar();
+  }, [reloadAvatar]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -90,11 +109,6 @@ export default function ProfileScreen() {
         }},
       ]);
     }
-  };
-
-  const handleSwitchRole = (role: UserRole) => {
-    void hapticSelection();
-    switchRole(role);
   };
 
   const handleSimulateNextDay = async () => {
@@ -137,9 +151,13 @@ export default function ProfileScreen() {
 
             {/* Avatar */}
             <View style={styles.avatarWrap}>
-              <View style={[styles.avatar, { backgroundColor: colors.primary + "30", borderColor: colors.primary }]}>
-                <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>
-              </View>
+              {localAvatarUri ? (
+                <Image source={{ uri: localAvatarUri }} style={[styles.avatar, { borderColor: colors.primary }]} />
+              ) : (
+                <View style={[styles.avatar, { backgroundColor: colors.primary + "30", borderColor: colors.primary }]}>
+                  <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>
+                </View>
+              )}
             </View>
 
             <Text style={[styles.heroName, { color: colors.onGradient }]}>{user?.name ?? `${APP_NAME} User`}</Text>
@@ -147,7 +165,9 @@ export default function ProfileScreen() {
               <Ionicons name="location-outline" size={13} color={colors.onGradientMuted} />
               <Text style={[styles.heroMeta, { color: colors.onGradientMuted }]}>{user?.region ?? "Tokyo, Japan"}</Text>
               <Text style={[styles.heroDot, { color: colors.onGradientMuted }]}>·</Text>
-              <Text style={[styles.heroMeta, { color: colors.onGradientMuted }]}>{user?.role === "trainer" ? "Trainer" : "Basic Member"}</Text>
+              <Text style={[styles.heroMeta, { color: colors.onGradientMuted }]}>
+                {user?.membershipTier === "premium" ? "Premium Member" : user?.role === "trainer" ? "Trainer" : "Basic Member"}
+              </Text>
             </View>
 
             {/* Stats row */}
@@ -285,27 +305,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Role switcher */}
-        <View style={[styles.roleCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
-          <Text style={[styles.roleTitle, { color: colors.foreground }]}>Switch Role (Demo)</Text>
-          <View style={styles.roleRow}>
-            {(["member", "trainer", "owner"] as UserRole[]).map((r) => (
-              <TouchableOpacity
-                key={r}
-                onPress={() => handleSwitchRole(r)}
-                style={[
-                  styles.roleBtn,
-                  { backgroundColor: user?.role === r ? colors.primary : colors.muted },
-                ]}
-              >
-                <Text style={[styles.roleBtnText, { color: user?.role === r ? colors.primaryForeground : colors.mutedForeground }]}>
-                  {r.charAt(0).toUpperCase() + r.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
         {/* Menu */}
         <View style={[styles.menuCard, { backgroundColor: colors.card, ...colors.shadow.soft }]}>
           {MENU_ITEMS.map((item, idx) => (
@@ -317,8 +316,12 @@ export default function ProfileScreen() {
                   router.push(item.route);
                   return;
                 }
-                if (item.label === "Notifications") setRemindersOpen(true);
-                else Alert.alert("Coming Soon");
+                if (item.label === "Edit Profile") setEditProfileOpen(true);
+                else if (item.label === "Notifications") setRemindersOpen(true);
+                else if (item.label === "Privacy & Security") setPrivacyOpen(true);
+                else if (item.label === "Upgrade Membership") setUpgradeOpen(true);
+                else if (item.label === "Help & Support") setHelpOpen(true);
+                else if (item.label.startsWith("About ")) setAboutOpen(true);
               }}
               style={[styles.menuItem, idx < MENU_ITEMS.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: colors.border }]}
             >
@@ -375,6 +378,11 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </ScrollView>
       <ReminderSettingsSheet visible={remindersOpen} onClose={() => setRemindersOpen(false)} />
+      <EditProfileSheet visible={editProfileOpen} onClose={() => setEditProfileOpen(false)} onSaved={reloadAvatar} />
+      <PrivacySecuritySheet visible={privacyOpen} onClose={() => setPrivacyOpen(false)} />
+      <HelpSupportSheet visible={helpOpen} onClose={() => setHelpOpen(false)} />
+      <AboutVeeraSheet visible={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <UpgradeMembershipSheet visible={upgradeOpen} onClose={() => setUpgradeOpen(false)} />
     </View>
     </ScreenEntrance>
   );
@@ -450,12 +458,6 @@ const styles = StyleSheet.create({
   bodyStatIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 2 },
   bodyStatVal: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   bodyStatLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
-
-  roleCard: { borderRadius: 16, padding: 16, gap: 12 },
-  roleTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  roleRow: { flexDirection: "row", gap: 8 },
-  roleBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
-  roleBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 
   themeCard: { borderRadius: 16, padding: 16, gap: 10 },
   themeTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },

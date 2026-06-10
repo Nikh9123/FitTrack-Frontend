@@ -32,6 +32,7 @@ export interface User {
   weightKg?: string | null;
   bmi?: string | null;
   region?: string | null;
+  membershipTier?: "free" | "pending" | "premium";
   memberSince: string;
   gymName?: string | null;
 }
@@ -47,6 +48,12 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  /** Persist profile fields to the server and refresh local user state. */
+  updateProfile: (payload: {
+    firstName?: string;
+    lastName?: string | null;
+    region?: string | null;
+  }) => Promise<void>;
   /** Fetch the latest profile from the server and update local state. */
   refreshProfile: () => Promise<void>;
   /** Reload auth state from device storage (e.g. after web OAuth callback). */
@@ -254,6 +261,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(updated);
   };
 
+  const updateProfile = async (payload: {
+    firstName?: string;
+    lastName?: string | null;
+    region?: string | null;
+  }) => {
+    if (!token) throw new Error("Not authenticated");
+    const response = await requestJson<{ user: User }>(
+      "/auth/me",
+      { method: "PATCH", body: JSON.stringify(payload) },
+      token,
+    );
+    await AsyncStorage.setItem(API_USER_KEY, JSON.stringify(response.user));
+    setUser(response.user);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -267,6 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginWithGoogle,
         logout,
         updateUser,
+        updateProfile,
         refreshProfile,
         reloadSession,
         switchRole,
